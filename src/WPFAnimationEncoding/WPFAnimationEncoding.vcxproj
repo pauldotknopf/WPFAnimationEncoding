@@ -82,9 +82,11 @@
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="Exceptions.h" />
+    <ClInclude Include="libffmpeg.h" />
     <ClInclude Include="resource.h" />
     <ClInclude Include="Stdafx.h" />
     <ClInclude Include="VideoFileReader.h" />
+    <ClInclude Include="VideoReEncoder.h" />
     <ClInclude Include="WPFAnimationEncoding.h" />
   </ItemGroup>
   <ItemGroup>
@@ -95,6 +97,7 @@
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">Create</PrecompiledHeader>
     </ClCompile>
     <ClCompile Include="VideoFileReader.cpp" />
+    <ClCompile Include="VideoReEncoder.cpp" />
     <ClCompile Include="WPFAnimationEncoding.cpp" />
   </ItemGroup>
   <ItemGroup>

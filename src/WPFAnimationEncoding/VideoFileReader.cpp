@@ -2,23 +2,6 @@
 #include "VideoFileReader.h"
 #include "Exceptions.h"
 
-namespace libffmpeg
-{
-	extern "C"
-	{
-		// disable warnings about badly formed documentation from FFmpeg, which we don't need at all
-		#pragma warning(disable:4635) 
-		// disable warning about conversion int64 to int32
-		#pragma warning(disable:4244) 
-
-		#include "libavformat\avformat.h"
-		#include "libavformat\avio.h"
-		#include "libavcodec\avcodec.h"
-		#include "libswscale\swscale.h"
-		#undef PixelFormat
-	}
-}
-
 namespace WPFAnimationEncoding
 {
 	// A structure to encapsulate all FFMPEG related private variable
@@ -80,13 +63,6 @@ namespace WPFAnimationEncoding
 		data->Packet->data = NULL;
 
 		bool success = false;
-
-		//// convert specified managed String to UTF8 unmanaged string
-		//IntPtr ptr = System::Runtime::InteropServices::Marshal::StringToHGlobalUni(fileName);
-		//wchar_t* nativeFileNameUnicode = (wchar_t*)ptr.ToPointer();
-		//int utf8StringSize = WideCharToMultiByte(CP_UTF8, 0, nativeFileNameUnicode, -1, NULL, 0, NULL, NULL);
-		//char* nativeFileName = new char[utf8StringSize];
-		//WideCharToMultiByte(CP_UTF8, 0, nativeFileNameUnicode, -1, nativeFileName, utf8StringSize, NULL, NULL);
 
 		IntPtr ptr = System::Runtime::InteropServices::Marshal::StringToHGlobalAnsi(fileName);
 		char* nativeFileName = static_cast<char*>(ptr.ToPointer());

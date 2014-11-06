@@ -8,9 +8,11 @@ using namespace System::Drawing::Imaging;
 
 namespace WPFAnimationEncoding
 {
+	public delegate Bitmap^ VideoReEncodeCallback(Bitmap^ image, bool% cancel);
+
 	ref struct ReaderPrivateData;
 
-	public ref class VideoFileReader : IDisposable
+	public ref class VideoReEncoder
 	{
 	public:
 
@@ -45,55 +47,6 @@ namespace WPFAnimationEncoding
 		}
 
 		/// <summary>
-		/// Frame rate of the opened video file.
-		/// </summary>
-		///
-		/// <exception cref="System::IO::IOException">Thrown if no video file was open.</exception>
-		///
-		property int FrameRate
-		{
-			int get()
-			{
-				CheckIfVideoFileIsOpen();
-				return m_frameRate;
-			}
-		}
-
-		/// <summary>
-		/// Number of video frames in the opened video file.
-		/// </summary>
-		///
-		/// <remarks><para><note><b>Warning</b>: some video file formats may report different value
-		/// from the actual number of video frames in the file (subject to fix/investigate).</note></para>
-		/// </remarks>
-		///
-		/// <exception cref="System::IO::IOException">Thrown if no video file was open.</exception>
-		///
-		property Int64 FrameCount
-		{
-			Int64 get()
-			{
-				CheckIfVideoFileIsOpen();
-				return m_framesCount;
-			}
-		}
-
-		/// <summary>
-		/// Name of codec used for encoding the opened video file.
-		/// </summary>
-		///
-		/// <exception cref="System::IO::IOException">Thrown if no video file was open.</exception>
-		///
-		property String^ CodecName
-		{
-			String^ get()
-			{
-				CheckIfVideoFileIsOpen();
-				return m_codecName;
-			}
-		}
-
-		/// <summary>
 		/// The property specifies if a video file is opened or not by this instance of the class.
 		/// </summary>
 		property bool IsOpen
@@ -110,7 +63,7 @@ namespace WPFAnimationEncoding
 		/// Object's finalizer.
 		/// </summary>
 		/// 
-		!VideoFileReader()
+		!VideoReEncoder()
 		{
 			Close();
 		}
@@ -121,15 +74,15 @@ namespace WPFAnimationEncoding
 		/// Initializes a new instance of the <see cref="VideoFileReader"/> class.
 		/// </summary>
 		/// 
-		VideoFileReader(void);
+		VideoReEncoder(void);
 
 		/// <summary>
 		/// Disposes the object and frees its resources.
 		/// </summary>
 		/// 
-		~VideoFileReader()
+		~VideoReEncoder()
 		{
-			this->!VideoFileReader();
+			this->!VideoReEncoder();
 			disposed = true;
 		}
 
@@ -145,16 +98,13 @@ namespace WPFAnimationEncoding
 		void Open(String^ fileName);
 
 		/// <summary>
-		/// Read next video frame of the currently opened video file.
+		/// Start re encoding the video to a new destination.
 		/// </summary>
-		/// 
-		/// <returns>Returns next video frame of the opened file or <see langword="null"/> if end of
-		/// file was reached. The returned video frame has 24 bpp color format.</returns>
 		/// 
 		/// <exception cref="System::IO::IOException">Thrown if no video file was open.</exception>
 		/// <exception cref="VideoException">A error occurred while reading next video frame. See exception message.</exception>
 		/// 
-		Bitmap^ ReadVideoFrame();
+		void StartReEncoding(String^ fileName, VideoReEncodeCallback^ callback);
 
 		/// <summary>
 		/// Close currently opened video file if any.
@@ -166,12 +116,9 @@ namespace WPFAnimationEncoding
 
 		int m_width;
 		int m_height;
-		int     m_frameRate;
-		String^ m_codecName;
-		Int64 m_framesCount;
 
 	private:
-		Bitmap^ DecodeVideoFrame();
+		//Bitmap^ DecodeVideoFrame();
 
 		// Checks if video file was opened
 		void CheckIfVideoFileIsOpen()
@@ -196,5 +143,4 @@ namespace WPFAnimationEncoding
 		ReaderPrivateData^ data;
 		bool disposed;
 	};
-
 }
