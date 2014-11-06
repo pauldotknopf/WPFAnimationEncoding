@@ -4,268 +4,193 @@
 
 namespace WPFAnimationEncoding
 {
-	// A structure to encapsulate all FFMPEG related private variable
-	ref struct ReaderPrivateData
-	{
-	public:
-		libffmpeg::AVFormatContext*             FormatContext;
-		libffmpeg::AVStream*                    VideoStream;
-		libffmpeg::AVCodecContext*              CodecContext;
-		libffmpeg::AVFrame*                             VideoFrame;
-		struct libffmpeg::SwsContext*   ConvertContext;
-
-		libffmpeg::AVPacket* Packet;
-		int BytesRemaining;
-
-		ReaderPrivateData()
-		{
-			FormatContext = NULL;
-			VideoStream = NULL;
-			CodecContext = NULL;
-			VideoFrame = NULL;
-			ConvertContext = NULL;
-
-			Packet = NULL;
-			BytesRemaining = 0;
-		}
-	};
-
 	// Class constructor
 	VideoReEncoder::VideoReEncoder(void) :
-		data(nullptr), disposed(false)
+		disposed(false)
 	{
 		libffmpeg::av_register_all();
 	}
 
-	//#pragma managed(push, off)
-	static libffmpeg::AVFormatContext* open_file(char* fileName)
-	{
-		libffmpeg::AVFormatContext* formatContext = NULL;
-
-		if (libffmpeg::avformat_open_input(&formatContext, fileName, NULL, NULL) != 0)
-		{
-			return NULL;
-		}
-		return formatContext;
-	}
-	//#pragma managed(pop)
-
-	// Opens the specified video file
-	void VideoReEncoder::Open(String^ fileName)
-	{
-		CheckIfDisposed();
-
-		// close previous file if any was open
-		Close();
-
-		data = gcnew ReaderPrivateData();
-		data->Packet = new libffmpeg::AVPacket();
-		data->Packet->data = NULL;
-
-		bool success = false;
-
-		IntPtr ptr = System::Runtime::InteropServices::Marshal::StringToHGlobalAnsi(fileName);
-		char* nativeFileName = static_cast<char*>(ptr.ToPointer());
-
-		try
-		{
-			// open the specified video file
-			data->FormatContext = open_file(nativeFileName);
-			if (data->FormatContext == NULL)
-			{
-				throw gcnew System::IO::IOException("Cannot open the video file.");
-			}
-
-			// retrieve stream information
-			if (libffmpeg::avformat_find_stream_info(data->FormatContext, NULL) < 0)
-			{
-				throw gcnew VideoException("Cannot find stream information.");
-			}
-
-			// search for the first video stream
-			for (unsigned int i = 0; i < data->FormatContext->nb_streams; i++)
-			{
-				if (data->FormatContext->streams[i]->codec->codec_type == libffmpeg::AVMEDIA_TYPE_VIDEO)
-				{
-					// get the pointer to the codec context for the video stream
-					data->CodecContext = data->FormatContext->streams[i]->codec;
-					data->VideoStream = data->FormatContext->streams[i];
-					break;
-				}
-			}
-			if (data->VideoStream == NULL)
-			{
-				throw gcnew VideoException("Cannot find video stream in the specified file.");
-			}
-
-			// find decoder for the video stream
-			libffmpeg::AVCodec* codec = libffmpeg::avcodec_find_decoder(data->CodecContext->codec_id);
-			if (codec == NULL)
-			{
-				throw gcnew VideoException("Cannot find codec to decode the video stream.");
-			}
-
-			// open the codec
-			if (libffmpeg::avcodec_open2(data->CodecContext, codec, NULL) < 0)
-			{
-				throw gcnew VideoException("Cannot open video codec.");
-			}
-
-			// allocate video frame
-			data->VideoFrame = libffmpeg::avcodec_alloc_frame();
-
-			// prepare scaling context to convert RGB image to video format
-			data->ConvertContext = libffmpeg::sws_getContext(data->CodecContext->width, data->CodecContext->height, data->CodecContext->pix_fmt,
-				data->CodecContext->width, data->CodecContext->height, libffmpeg::PIX_FMT_BGR24,
-				SWS_BICUBIC, NULL, NULL, NULL);
-
-			if (data->ConvertContext == NULL)
-			{
-				throw gcnew VideoException("Cannot initialize frames conversion context.");
-			}
-
-			// get some properties of the video file
-			m_width = data->CodecContext->width;
-			m_height = data->CodecContext->height;
-
-			success = true;
-		}
-		finally
-		{
-			System::Runtime::InteropServices::Marshal::FreeHGlobal(ptr);
-
-			if (!success)
-			{
-				Close();
-			}
-		}
-	}
-
-	// Close current video file
-	void VideoReEncoder::Close()
-	{
-		if (data != nullptr)
-		{
-			if (data->VideoFrame != NULL)
-			{
-				libffmpeg::av_free(data->VideoFrame);
-			}
-
-			if (data->CodecContext != NULL)
-			{
-				libffmpeg::avcodec_close(data->CodecContext);
-			}
-
-			if (data->FormatContext != NULL)
-			{
-				libffmpeg::AVFormatContext* context = data->FormatContext;
-				libffmpeg::avformat_close_input(&context);
-			}
-
-			if (data->ConvertContext != NULL)
-			{
-				libffmpeg::sws_freeContext(data->ConvertContext);
-			}
-
-			if (data->Packet->data != NULL)
-			{
-				libffmpeg::av_free_packet(data->Packet);
-			}
-
-			data = nullptr;
-		}
-	}
-
 	// start the reencoding of the video file
-	void VideoReEncoder::StartReEncoding(String^ fileName, VideoReEncodeCallback^ callback)
+	void VideoReEncoder::StartReEncoding(String^ inputFileName, String^ outputFileName, VideoReEncodeCallback^ callback)
 	{
 		// http://ffmpeg.org/doxygen/trunk/doc_2examples_2transcoding_8c-example.html
 
-		int result;
-		IntPtr ptr = System::Runtime::InteropServices::Marshal::StringToHGlobalAnsi(fileName);
-		char* nativeFileName = static_cast<char*>(ptr.ToPointer());
+		IntPtr nativeInputFileNamePointer = System::Runtime::InteropServices::Marshal::StringToHGlobalAnsi(inputFileName);
+		char* nativeInputFileName = static_cast<char*>(nativeInputFileNamePointer.ToPointer());
+
+		IntPtr nativeOutputFileNamePointer = System::Runtime::InteropServices::Marshal::StringToHGlobalAnsi(outputFileName);
+		char* nativeOutputFileName = static_cast<char*>(nativeOutputFileNamePointer.ToPointer());
+
+		int result = -1;
+		// input
+		libffmpeg::AVFormatContext *inputFormatContext = NULL;
+		libffmpeg::AVCodecContext *inputCodecContext = NULL;
+		libffmpeg::AVStream *inputVideoStream = NULL;
+		// output
+		libffmpeg::AVFormatContext *outputFormatContext = NULL;
+		// general
+		libffmpeg::AVCodec *codec = NULL;
+		libffmpeg::AVFrame *videoFrame = NULL;
+		libffmpeg::SwsContext *convertContext = NULL;
+		libffmpeg::AVPacket packet;
+		packet.data = NULL;
+		packet.size = 0;
 
 		try
 		{
-			libffmpeg::AVFormatContext *outputFormat = NULL;
-			libffmpeg::AVStream *outStream;
+			// open the input file
+			int result = libffmpeg::avformat_open_input(&inputFormatContext, nativeInputFileName, NULL, NULL);
+			if (result != 0)
+				throw gcnew VideoException("Input avformat_alloc_output_context2 error " + result);
+			if (!inputFormatContext)
+				throw gcnew VideoException("Couldn't create input format context.");
 
-			int result = libffmpeg::avformat_alloc_output_context2(&outputFormat, NULL, NULL, nativeFileName);
+			// retrieve stream information
+			if (libffmpeg::avformat_find_stream_info(inputFormatContext, NULL) < 0)
+				throw gcnew VideoException("Cannot find stream information.");
 
-			if (!outputFormat) 
-				throw gcnew VideoException("Could not create output context.");
-			if (result < 0)
-				throw gcnew VideoException("avformat_alloc_output_context2 error. " + result);
-
-			for (int i = 0; i < data->FormatContext->nb_streams; i++)
+			// search for the first video stream
+			for (unsigned int i = 0; i < inputFormatContext->nb_streams; i++)
 			{
-				outStream = avformat_new_stream(outputFormat, NULL);
-
-				if (!outStream) {
-					throw gcnew VideoException("Failed allocating output stream");
-				}
-
-				result = libffmpeg::avcodec_copy_context(outputFormat->streams[i]->codec,
-					data->FormatContext->streams[i]->codec);
-
-				if (result < 0) {
-					throw gcnew VideoException("Copying stream context failed. " + result);
-				}
-
-				if (!(outputFormat->oformat->flags & AVFMT_NOFILE)) {
-					result = libffmpeg::avio_open(&outputFormat->pb, nativeFileName, AVIO_FLAG_WRITE);
-					if (result < 0) {
-						throw gcnew VideoException("Could not open output file. " + result);
-					}
-				}
-
-				/* init muxer, write output file header */
-				result = libffmpeg::avformat_write_header(outputFormat, NULL);
-				if (result < 0) {
-					throw gcnew VideoException("Error occurred when opening output file. " + result);
-				}
-			}
-
-			enum libffmpeg::AVMediaType type;
-			unsigned int stream_index;
-			libffmpeg::AVPacket packet;
-			packet.data = NULL;
-			packet.size = 0;
-
-			while (1) {
-				result = libffmpeg::av_read_frame(data->FormatContext, &packet);
-				if (result < 0)
+				if (inputFormatContext->streams[i]->codec->codec_type == libffmpeg::AVMEDIA_TYPE_VIDEO)
+				{
+					// get the pointer to the codec context for the video stream
+					inputCodecContext = inputFormatContext->streams[i]->codec;
+					inputVideoStream = inputFormatContext->streams[i];
 					break;
-				
-				stream_index = packet.stream_index;
-				type = data->FormatContext->streams[packet.stream_index]->codec->codec_type;
-			
-				/* remux this frame without reencoding */
-				packet.dts = libffmpeg::av_rescale_q_rnd(packet.dts,
-					data->FormatContext->streams[stream_index]->time_base,
-					outputFormat->streams[stream_index]->time_base,
-					(libffmpeg::AVRounding)(libffmpeg::AV_ROUND_NEAR_INF | libffmpeg::AV_ROUND_PASS_MINMAX));
-				packet.pts = libffmpeg::av_rescale_q_rnd(packet.pts,
-					data->FormatContext->streams[stream_index]->time_base,
-					outputFormat->streams[stream_index]->time_base,
-					(libffmpeg::AVRounding)(libffmpeg::AV_ROUND_NEAR_INF | libffmpeg::AV_ROUND_PASS_MINMAX));
-				result = libffmpeg::av_interleaved_write_frame(outputFormat, &packet);
-				if (result < 0)
-					throw gcnew VideoException("av_interleaved_write_frame error. " + result);
+				}
+			}
+			if (inputVideoStream == NULL)
+				throw gcnew VideoException("Cannot find video stream in the specified file.");
+			if (inputCodecContext == NULL)
+				throw gcnew VideoException("Cannot create the input video codec context.");
 
-				av_free_packet(&packet);
+			// find decoder for the video stream
+			codec = libffmpeg::avcodec_find_decoder(inputCodecContext->codec_id);
+			if (codec == NULL)
+				throw gcnew VideoException("Cannot find codec to decode the video stream with");
+
+			// open the codec
+			if (libffmpeg::avcodec_open2(inputCodecContext, codec, NULL) < 0)
+				throw gcnew VideoException("Cannot open video codec.");
+
+			// allocate video frame
+			videoFrame = libffmpeg::avcodec_alloc_frame();
+			if (videoFrame == NULL)
+				throw gcnew VideoException("Couldn't allocate the video frame.");
+
+			// prepare scaling context to convert RGB image to video format
+			convertContext = libffmpeg::sws_getContext(inputCodecContext->width, inputCodecContext->height, inputCodecContext->pix_fmt,
+				inputCodecContext->width, inputCodecContext->height, libffmpeg::PIX_FMT_BGR24, SWS_BICUBIC, NULL, NULL, NULL);
+			if (convertContext == NULL)
+				throw gcnew VideoException("Cannot initialize frames conversion context.");
+
+			// open the output file
+			result = libffmpeg::avformat_alloc_output_context2(&outputFormatContext, NULL, NULL, nativeOutputFileName);
+			if (result != 0)
+				throw gcnew VideoException("Output avformat_alloc_output_context2 error " + result);
+			if (!inputFormatContext)
+				throw gcnew VideoException("Couldn't create output format context.");
+
+			// copy all the stream information from the input file, to the output file
+			for (int i = 0; i < inputFormatContext->nb_streams; i++)
+			{
+				// create the new stream
+				libffmpeg::AVStream *outStream = libffmpeg::avformat_new_stream(outputFormatContext, NULL);
+				if (!outStream)
+					throw gcnew VideoException("Failed allocating output stream");
+
+				// cope all the information about the stream from the input, to the output
+				result = libffmpeg::avcodec_copy_context(outputFormatContext->streams[i]->codec,
+					inputFormatContext->streams[i]->codec);
+				if (result < 0)
+					throw gcnew VideoException("Copying stream context failed. " + result);
 			}
 
-			libffmpeg::av_write_trailer(outputFormat);
+			// init muxer and write output file header
+			if (!(outputFormatContext->oformat->flags & AVFMT_NOFILE)) {
+				result = libffmpeg::avio_open(&outputFormatContext->pb, nativeOutputFileName, AVIO_FLAG_WRITE);
+				if (result < 0)
+					throw gcnew VideoException("Could not open output file. " + result);
+			}
+			result = libffmpeg::avformat_write_header(outputFormatContext, NULL);
+			if (result < 0)
+				throw gcnew VideoException("Error occurred when opening output file. " + result);
 
-			av_free_packet(&packet);
-			if (outputFormat && !(outputFormat->oformat->flags & AVFMT_NOFILE))
-				libffmpeg::avio_close(outputFormat->pb);
-			libffmpeg::avformat_free_context(outputFormat);
+			bool hasFrame = true;
+
+			while (hasFrame) {
+				hasFrame = libffmpeg::av_read_frame(inputFormatContext, &packet) == 0;
+				if (hasFrame) {
+
+					//type = data->FormatContext->streams[packet.stream_index]->codec->codec_type;
+
+					/* remux this frame without reencoding */
+					packet.dts = libffmpeg::av_rescale_q_rnd(packet.dts,
+						inputFormatContext->streams[packet.stream_index]->time_base,
+						outputFormatContext->streams[packet.stream_index]->time_base,
+						(libffmpeg::AVRounding)(libffmpeg::AV_ROUND_NEAR_INF | libffmpeg::AV_ROUND_PASS_MINMAX));
+
+					packet.pts = libffmpeg::av_rescale_q_rnd(packet.pts,
+						inputFormatContext->streams[packet.stream_index]->time_base,
+						outputFormatContext->streams[packet.stream_index]->time_base,
+						(libffmpeg::AVRounding)(libffmpeg::AV_ROUND_NEAR_INF | libffmpeg::AV_ROUND_PASS_MINMAX));
+
+					result = libffmpeg::av_interleaved_write_frame(outputFormatContext, &packet);
+
+					if (result < 0)
+						throw gcnew VideoException("av_interleaved_write_frame error. " + result);
+
+					av_free_packet(&packet);
+
+				}
+			}
+
+			libffmpeg::av_write_trailer(outputFormatContext);
 		}
 		finally
 		{
-			System::Runtime::InteropServices::Marshal::FreeHGlobal(ptr);
+			System::Runtime::InteropServices::Marshal::FreeHGlobal(nativeInputFileNamePointer);
+			System::Runtime::InteropServices::Marshal::FreeHGlobal(nativeOutputFileNamePointer);
+
+			// free general stuff
+			if (packet.data != NULL)
+				av_free_packet(&packet);
+			if (videoFrame != NULL)
+				libffmpeg::av_free(videoFrame);
+			if (inputCodecContext != NULL)
+				libffmpeg::avcodec_close(inputCodecContext);
+			if (convertContext != NULL)
+				libffmpeg::sws_freeContext(convertContext);
+
+			// close the output file
+			if (outputFormatContext != NULL) {
+				if (outputFormatContext && !(outputFormatContext->oformat->flags & AVFMT_NOFILE))
+					libffmpeg::avio_close(outputFormatContext->pb);
+				libffmpeg::avformat_free_context(outputFormatContext);
+			}
+
+			// close the input file
+			if (inputFormatContext != NULL)
+				libffmpeg::avformat_close_input(&inputFormatContext);
+
+
+			//\int result = -1;
+			//// input
+			//libffmpeg::AVFormatContext *inputFormatContext = NULL;
+			//libffmpeg::AVCodecContext *inputCodecContext = NULL;
+			//libffmpeg::AVStream *inputVideoStream = NULL;
+			//// output
+			//libffmpeg::AVFormatContext *outputFormatContext = NULL;
+			//// general
+			//libffmpeg::AVCodec *codec = NULL;
+			//libffmpeg::AVFrame *videoFrame = NULL;
+			//libffmpeg::SwsContext *convertContext = NULL;
+			//libffmpeg::AVPacket packet;
+			//packet.data = NULL;
+			//packet.size = 0;
+
 		}
 	}
 

@@ -13,15 +13,14 @@ namespace Sandbox
     {
         static void Main(string[] args)
         {
-            using (var file = new WPFAnimationEncoding.VideoReEncoder())
+            using (var file = new VideoReEncoder())
             {
-                file.Open(Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "h264.mov"));
-
                 var outputFile = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "h264out.mov");
                 if(File.Exists(outputFile))
                     File.Delete(outputFile);
 
-                file.StartReEncoding(outputFile,
+                file.StartReEncoding(Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "h264.mov"), 
+                    outputFile,
                     (Bitmap image, ref bool cancel) =>
                     {
                         return null;
