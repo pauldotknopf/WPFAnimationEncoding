@@ -1,6 +1,7 @@
 #include "stdafx.h"
 #include "VideoFileReader.h"
 #include "Exceptions.h"
+#include "libffmpeg.h"
 
 namespace WPFAnimationEncoding
 {

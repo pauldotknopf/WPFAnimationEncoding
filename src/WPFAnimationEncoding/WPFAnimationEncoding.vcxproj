@@ -57,7 +57,7 @@
     </ClCompile>
     <Link>
       <GenerateDebugInformation>true</GenerateDebugInformation>
-      <AdditionalDependencies>avformat.lib;avcodec.lib;avutil.lib;swscale.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>avformat.lib;avcodec.lib;avutil.lib;swscale.lib;avdevice.lib;avfilter.lib;postproc.lib;swresample.lib;%(AdditionalDependencies)</AdditionalDependencies>
       <AdditionalLibraryDirectories>..\..\libraries\ffmpeg-20141102-git-547fce9-win32-dev\lib;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
     </Link>
   </ItemDefinitionGroup>
@@ -70,7 +70,7 @@
     </ClCompile>
     <Link>
       <GenerateDebugInformation>true</GenerateDebugInformation>
-      <AdditionalDependencies>avformat.lib;avcodec.lib;avutil.lib;swscale.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>avformat.lib;avcodec.lib;avutil.lib;swscale.lib;avdevice.lib;avfilter.lib;postproc.lib;swresample.lib;%(AdditionalDependencies)</AdditionalDependencies>
       <AdditionalLibraryDirectories>..\..\libraries\ffmpeg-20141102-git-547fce9-win32-dev\lib;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
     </Link>
   </ItemDefinitionGroup>
@@ -84,19 +84,23 @@
     <ClInclude Include="Exceptions.h" />
     <ClInclude Include="libffmpeg.h" />
     <ClInclude Include="resource.h" />
+    <ClInclude Include="Sandbox.h" />
     <ClInclude Include="Stdafx.h" />
     <ClInclude Include="VideoFileReader.h" />
+    <ClInclude Include="VideoFileWriter.h" />
     <ClInclude Include="VideoReEncoder.h" />
     <ClInclude Include="WPFAnimationEncoding.h" />
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="AssemblyInfo.cpp" />
     <ClCompile Include="Exceptions.cpp" />
+    <ClCompile Include="Sandbox.cpp" />
     <ClCompile Include="Stdafx.cpp">
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">Create</PrecompiledHeader>
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">Create</PrecompiledHeader>
     </ClCompile>
     <ClCompile Include="VideoFileReader.cpp" />
+    <ClCompile Include="VideoFileWriter.cpp" />
     <ClCompile Include="VideoReEncoder.cpp" />
     <ClCompile Include="WPFAnimationEncoding.cpp" />
   </ItemGroup>

@@ -1,7 +1,5 @@
 #pragma once
 
-#include "libffmpeg.h"
-
 using namespace System;
 using namespace System::Drawing;
 using namespace System::Drawing::Imaging;
