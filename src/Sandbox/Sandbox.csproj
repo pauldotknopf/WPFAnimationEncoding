@@ -13,7 +13,7 @@
     <FileAlignment>512</FileAlignment>
   </PropertyGroup>
   <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Debug|AnyCPU' ">
-    <PlatformTarget>AnyCPU</PlatformTarget>
+    <PlatformTarget>x86</PlatformTarget>
     <DebugSymbols>true</DebugSymbols>
     <DebugType>full</DebugType>
     <Optimize>false</Optimize>
@@ -23,7 +23,7 @@
     <WarningLevel>4</WarningLevel>
   </PropertyGroup>
   <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Release|AnyCPU' ">
-    <PlatformTarget>AnyCPU</PlatformTarget>
+    <PlatformTarget>x86</PlatformTarget>
     <DebugType>pdbonly</DebugType>
     <Optimize>true</Optimize>
     <OutputPath>bin\Release\</OutputPath>
@@ -61,35 +61,35 @@
     </None>
   </ItemGroup>
   <ItemGroup>
-    <None Include="..\..\libraries\ffmpeg-20141102-git-547fce9-win32-dev\bin\avcodec-56.dll">
+    <None Include="..\..\libraries\ffmpeg-20141107-git-b1c99f4-win32-dev\bin\avcodec-56.dll">
       <Link>avcodec-56.dll</Link>
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
-    <None Include="..\..\libraries\ffmpeg-20141102-git-547fce9-win32-dev\bin\avdevice-56.dll">
+    <None Include="..\..\libraries\ffmpeg-20141107-git-b1c99f4-win32-dev\bin\avdevice-56.dll">
       <Link>avdevice-56.dll</Link>
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
-    <None Include="..\..\libraries\ffmpeg-20141102-git-547fce9-win32-dev\bin\avfilter-5.dll">
+    <None Include="..\..\libraries\ffmpeg-20141107-git-b1c99f4-win32-dev\bin\avfilter-5.dll">
       <Link>avfilter-5.dll</Link>
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
-    <None Include="..\..\libraries\ffmpeg-20141102-git-547fce9-win32-dev\bin\avformat-56.dll">
+    <None Include="..\..\libraries\ffmpeg-20141107-git-b1c99f4-win32-dev\bin\avformat-56.dll">
       <Link>avformat-56.dll</Link>
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
-    <None Include="..\..\libraries\ffmpeg-20141102-git-547fce9-win32-dev\bin\avutil-54.dll">
+    <None Include="..\..\libraries\ffmpeg-20141107-git-b1c99f4-win32-dev\bin\avutil-54.dll">
       <Link>avutil-54.dll</Link>
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
-    <None Include="..\..\libraries\ffmpeg-20141102-git-547fce9-win32-dev\bin\postproc-53.dll">
+    <None Include="..\..\libraries\ffmpeg-20141107-git-b1c99f4-win32-dev\bin\postproc-53.dll">
       <Link>postproc-53.dll</Link>
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
-    <None Include="..\..\libraries\ffmpeg-20141102-git-547fce9-win32-dev\bin\swresample-1.dll">
+    <None Include="..\..\libraries\ffmpeg-20141107-git-b1c99f4-win32-dev\bin\swresample-1.dll">
       <Link>swresample-1.dll</Link>
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
-    <None Include="..\..\libraries\ffmpeg-20141102-git-547fce9-win32-dev\bin\swscale-3.dll">
+    <None Include="..\..\libraries\ffmpeg-20141107-git-b1c99f4-win32-dev\bin\swscale-3.dll">
       <Link>swscale-3.dll</Link>
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
