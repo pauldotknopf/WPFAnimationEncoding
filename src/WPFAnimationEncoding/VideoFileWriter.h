@@ -328,7 +328,7 @@ namespace WPFAnimationEncoding {
 		/// <exception cref="ArgumentException">Bitmap size must be of the same as video size, which was specified on opening video file.</exception>
 		/// <exception cref="VideoException">A error occurred while writing new video frame. See exception message.</exception>
 		/// 
-		void WriteVideoFrame(Bitmap^ frame, TimeSpan timestamp);
+		void WriteVideoFrame(Bitmap^ frame, int frameNumber);
 
 		/// <summary>
 		/// Close currently opened video file if any.

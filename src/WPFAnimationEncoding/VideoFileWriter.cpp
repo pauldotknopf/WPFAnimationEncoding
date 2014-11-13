@@ -268,11 +268,11 @@ namespace WPFAnimationEncoding {
 	// Writes new video frame to the opened video file
 	void VideoFileWriter::WriteVideoFrame(Bitmap^ frame)
 	{
-		WriteVideoFrame(frame, TimeSpan::MinValue);
+		WriteVideoFrame(frame, 0);
 	}
 
 	// Writes new video frame to the opened video file
-	void VideoFileWriter::WriteVideoFrame(Bitmap^ frame, TimeSpan timestamp)
+	void VideoFileWriter::WriteVideoFrame(Bitmap^ frame, int frameNumber)
 	{
 		CheckIfDisposed();
 
@@ -317,11 +317,7 @@ namespace WPFAnimationEncoding {
 
 		frame->UnlockBits(bitmapData);
 
-		if (timestamp.Ticks >= 0)
-		{
-			const double frameNumber = timestamp.TotalSeconds * m_frameRate;
-			data->VideoFrame->pts = static_cast<libffmpeg::int64_t>(frameNumber);
-		}
+		data->VideoFrame->pts = static_cast<libffmpeg::int64_t>(frameNumber);
 
 		// write the converted frame to the video file
 		write_video_frame(data);
