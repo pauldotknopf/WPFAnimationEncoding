@@ -215,6 +215,7 @@ namespace WPFAnimationEncoding
 				// did we finish the current frame? Then we can return
 				if (frameFinished)
 				{
+					Console::WriteLine("Got frame..");
 					return DecodeVideoFrame();
 				}
 			}
@@ -236,6 +237,13 @@ namespace WPFAnimationEncoding
 					exit = true;
 					break;
 				}
+
+				if (data->Packet->stream_index == data->VideoStream->index)
+				{
+					System::Console::WriteLine("pts:" + data->Packet->pts);
+					System::Console::WriteLine("dts:" + data->Packet->dts);
+				}
+
 			} while (data->Packet->stream_index != data->VideoStream->index);
 
 			// exit ?

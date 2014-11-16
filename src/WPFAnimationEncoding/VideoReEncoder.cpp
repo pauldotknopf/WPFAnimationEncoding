@@ -56,7 +56,9 @@ namespace WPFAnimationEncoding
 	struct VideoReEncoderSession
 	{
 		VideoReEncoderSession() :
-			convertContext(NULL)
+			inputConvertContext(NULL),
+			outputConvertContext(NULL),
+			outputGrayscaleContext(NULL)
 		{
 			packet.data = NULL;
 			packet.size = 0;
@@ -69,17 +71,30 @@ namespace WPFAnimationEncoding
 				libffmpeg::av_free_packet(&packet);
 			}
 
-			if (convertContext != NULL)
+			if (inputConvertContext != NULL)
 			{
-				convertContext = NULL;
-				libffmpeg::sws_freeContext(convertContext);
+				libffmpeg::sws_freeContext(inputConvertContext);
+				inputConvertContext = NULL;
+			}
+
+			if (outputConvertContext != NULL)
+			{
+				libffmpeg::sws_freeContext(outputConvertContext);
+				outputConvertContext = NULL;
+			}
+
+			if (outputGrayscaleContext != NULL)
+			{
+				libffmpeg::sws_freeContext(outputGrayscaleContext);
+				outputGrayscaleContext = NULL;
 			}
 		}
 		InputOutputContext input;
 		InputOutputContext output;
-		// general
-		libffmpeg::SwsContext *convertContext;
 		libffmpeg::AVPacket packet;
+		libffmpeg::SwsContext *inputConvertContext;
+		libffmpeg::SwsContext *outputConvertContext;
+		libffmpeg::SwsContext *outputGrayscaleContext;
 	};
 
 	static void prepare_input(VideoReEncoderSession* session, char *fileName)
@@ -118,6 +133,10 @@ namespace WPFAnimationEncoding
 		// open the codec
 		if (libffmpeg::avcodec_open2(session->input.codecContext, session->input.codec, NULL) < 0)
 			throw gcnew VideoException("Cannot open video codec.");
+
+		session->input.videoFrame = libffmpeg::avcodec_alloc_frame();
+		if (!session->input.videoFrame)
+			throw gcnew VideoException("Couldn't create the input video frame.");
 	}
 
 	static void prepate_output(VideoReEncoderSession* session, char *fileName)
@@ -161,6 +180,55 @@ namespace WPFAnimationEncoding
 			throw gcnew VideoException("Error occurred when opening output file. " + result);
 	}
 
+	static Bitmap^ DecodeFrame(VideoReEncoderSession* session)
+	{
+		int frameFinished;
+		Bitmap^ bitmap = nullptr;
+
+		int bytesDecoded;
+		int bytesRemaining = session->packet.size;
+		bool exit = false;
+
+		// work on the current packet until we have decoded all of it
+		while (bytesRemaining > 0)
+		{
+			// decode the next chunk of data
+			bytesDecoded = libffmpeg::avcodec_decode_video2(session->input.codecContext, session->input.videoFrame, &frameFinished, &session->packet);
+
+			// was there an error?
+			if (bytesDecoded < 0)
+			{
+				throw gcnew VideoException("Error while decoding frame.");
+			}
+
+			bytesRemaining -= bytesDecoded;
+
+			if (frameFinished)
+			{
+				bitmap = gcnew Bitmap(session->input.codecContext->width, session->input.codecContext->height, PixelFormat::Format24bppRgb);
+
+				// lock the bitmap
+				BitmapData^ bitmapData = bitmap->LockBits(System::Drawing::Rectangle(0, 0, session->input.codecContext->width, session->input.codecContext->height),
+					ImageLockMode::ReadOnly, PixelFormat::Format24bppRgb);
+
+				libffmpeg::uint8_t* ptr = reinterpret_cast<libffmpeg::uint8_t*>(static_cast<void*>(bitmapData->Scan0));
+
+				libffmpeg::uint8_t* srcData[4] = { ptr, NULL, NULL, NULL };
+				int srcLinesize[4] = { bitmapData->Stride, 0, 0, 0 };
+
+				// convert video frame to the RGB bitmap
+				libffmpeg::sws_scale(session->inputConvertContext, session->input.videoFrame->data, session->input.videoFrame->linesize, 0,
+					session->input.codecContext->height, srcData, srcLinesize);
+
+				bitmap->UnlockBits(bitmapData);
+
+				return bitmap;
+			}
+		}
+
+		return bitmap;
+	}
+
 	// Class constructor
 	VideoReEncoder::VideoReEncoder(void) :
 		disposed(false)
@@ -189,37 +257,68 @@ namespace WPFAnimationEncoding
 			prepate_output(&session, nativeOutputFileName);
 
 			// prepare scaling context to convert RGB image to video format
-			session.convertContext = libffmpeg::sws_getContext(session.input.codecContext->width, session.input.codecContext->height, session.input.codecContext->pix_fmt,
+			session.inputConvertContext = libffmpeg::sws_getContext(session.input.codecContext->width, session.input.codecContext->height, session.input.codecContext->pix_fmt,
 				session.input.codecContext->width, session.input.codecContext->height, libffmpeg::PIX_FMT_BGR24, SWS_BICUBIC, NULL, NULL, NULL);
-			if (session.convertContext == NULL)
-				throw gcnew VideoException("Cannot initialize frames conversion context.");
+			if (session.inputConvertContext == NULL)
+				throw gcnew VideoException("Cannot initialize input frames conversion context.");
 
 			bool hasFrame = true;
-
-			while (hasFrame) {
+			bool cancel = false;
+			while (hasFrame && !cancel) {
 				hasFrame = libffmpeg::av_read_frame(session.input.formatContext, &session.packet) == 0;
 				if (hasFrame) {
 
-					//type = data->FormatContext->streams[packet.stream_index]->codec->codec_type;
+					if (session.packet.stream_index == session.input.videoStream->index)
+					{
+						// this packet is video!
+						Bitmap^ decodedBitmap = DecodeFrame(&session);
+						if (decodedBitmap != nullptr)
+						{
+							callback(decodedBitmap, cancel);
 
-					/* remux this frame without reencoding */
-					session.packet.dts = libffmpeg::av_rescale_q_rnd(session.packet.dts,
-						session.input.formatContext->streams[session.packet.stream_index]->time_base,
-						session.output.formatContext->streams[session.packet.stream_index]->time_base,
-						(libffmpeg::AVRounding)(libffmpeg::AV_ROUND_NEAR_INF | libffmpeg::AV_ROUND_PASS_MINMAX));
+							// this packet is not the video we are interested in (probally audio).
+							// just remux it!
 
-					session.packet.pts = libffmpeg::av_rescale_q_rnd(session.packet.pts,
-						session.input.formatContext->streams[session.packet.stream_index]->time_base,
-						session.output.formatContext->streams[session.packet.stream_index]->time_base,
-						(libffmpeg::AVRounding)(libffmpeg::AV_ROUND_NEAR_INF | libffmpeg::AV_ROUND_PASS_MINMAX));
+							session.packet.dts = libffmpeg::av_rescale_q_rnd(session.packet.dts,
+								session.input.formatContext->streams[session.packet.stream_index]->time_base,
+								session.output.formatContext->streams[session.packet.stream_index]->time_base,
+								(libffmpeg::AVRounding)(libffmpeg::AV_ROUND_NEAR_INF | libffmpeg::AV_ROUND_PASS_MINMAX));
 
-					result = libffmpeg::av_interleaved_write_frame(session.output.formatContext, &session.packet);
+							session.packet.pts = libffmpeg::av_rescale_q_rnd(session.packet.pts,
+								session.input.formatContext->streams[session.packet.stream_index]->time_base,
+								session.output.formatContext->streams[session.packet.stream_index]->time_base,
+								(libffmpeg::AVRounding)(libffmpeg::AV_ROUND_NEAR_INF | libffmpeg::AV_ROUND_PASS_MINMAX));
 
-					if (result < 0)
-						throw gcnew VideoException("av_interleaved_write_frame error. " + result);
+							result = libffmpeg::av_interleaved_write_frame(session.output.formatContext, &session.packet);
+
+							if (result < 0)
+								throw gcnew VideoException("av_interleaved_write_frame error. " + result);
+						}
+					}
+					else
+					{
+						// this packet is not the video we are interested in (probally audio).
+						// just remux it!
+
+						session.packet.dts = libffmpeg::av_rescale_q_rnd(session.packet.dts,
+							session.input.formatContext->streams[session.packet.stream_index]->time_base,
+							session.output.formatContext->streams[session.packet.stream_index]->time_base,
+							(libffmpeg::AVRounding)(libffmpeg::AV_ROUND_NEAR_INF | libffmpeg::AV_ROUND_PASS_MINMAX));
+
+						session.packet.pts = libffmpeg::av_rescale_q_rnd(session.packet.pts,
+							session.input.formatContext->streams[session.packet.stream_index]->time_base,
+							session.output.formatContext->streams[session.packet.stream_index]->time_base,
+							(libffmpeg::AVRounding)(libffmpeg::AV_ROUND_NEAR_INF | libffmpeg::AV_ROUND_PASS_MINMAX));
+
+						result = libffmpeg::av_interleaved_write_frame(session.output.formatContext, &session.packet);
+
+						if (result < 0)
+							throw gcnew VideoException("av_interleaved_write_frame error. " + result);
+					}
+
+					
 
 					av_free_packet(&session.packet);
-
 				}
 			}
 
