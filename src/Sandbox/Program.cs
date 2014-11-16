@@ -1,4 +1,6 @@
 ﻿using System;
+using System.Drawing;
+using System.Drawing.Drawing2D;
 using System.IO;
 using WPFAnimationEncoding;
 
@@ -6,22 +8,34 @@ namespace Sandbox
 {
     class Program
     {
+        private static string _outputFile;
+        private static string _inputFile;
+
         static void Main()
         {
+            _outputFile = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "h264out.mov");
+            if (File.Exists(_outputFile))
+                File.Delete(_outputFile);
 
-            var outputFile = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "h264out.mp4");
-            if (File.Exists(outputFile))
-                File.Delete(outputFile);
+            _inputFile = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "h264.mov");
 
-            var inputFile = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "h264.mp4");
+            ReEncoderTests();
 
-            //var sandbox = new WPFAnimationEncoding.Sandbox();
-            //sandbox.Test(inputFile, outputFile);
+            Console.ReadLine();
+        }
 
+        static void SandboxTest()
+        {
+            var sandbox = new WPFAnimationEncoding.Sandbox();
+            sandbox.Test(_inputFile, _outputFile);
+        }
+
+        static void FileWriterTests()
+        {
             var fileReader = new WPFAnimationEncoding.VideoFileReader();
-            fileReader.Open(inputFile);
+            fileReader.Open(_inputFile);
             var fileWriter = new WPFAnimationEncoding.VideoFileWriter();
-            fileWriter.Open(outputFile, 640, 360, fileReader.FrameRate, VideoCodec.Default, 30000000);
+            fileWriter.Open(_outputFile, 640, 360, fileReader.FrameRate, VideoCodec.Default, 30000000);
 
             var frame = fileReader.ReadVideoFrame();
 
@@ -40,40 +54,42 @@ namespace Sandbox
 
             fileReader.Close();
             fileWriter.Close();
+        }
 
-            //using (var file = new VideoReEncoder())
-            //{
-            //var frameNumber = 0;
+        static void ReEncoderTests()
+        {
+            using (var file = new VideoReEncoder())
+            {
+            var frameNumber = 0;
 
-            //file.StartReEncoding(, 
-            //    outputFile,
-            //    (Bitmap image, ref bool cancel) =>
-            //    {
-            //        frameNumber++;
+            file.StartReEncoding(_inputFile, 
+                _outputFile,
+                (Bitmap image, ref bool cancel) =>
+                {
+                    frameNumber++;
 
-            //        using (var g = Graphics.FromImage(image))
-            //        {
-            //            g.SmoothingMode = SmoothingMode.AntiAlias;
-            //            g.InterpolationMode = InterpolationMode.HighQualityBicubic;
-            //            g.PixelOffsetMode = PixelOffsetMode.HighQuality;
-            //            g.DrawString("Frame number " + frameNumber, new Font("Tahoma", 24), Brushes.Black,
-            //                new PointF(0, 0));
+                    using (var g = Graphics.FromImage(image))
+                    {
+                        g.SmoothingMode = SmoothingMode.AntiAlias;
+                        g.InterpolationMode = InterpolationMode.HighQualityBicubic;
+                        g.PixelOffsetMode = PixelOffsetMode.HighQuality;
+                        g.DrawString("Frame number " + frameNumber, new Font("Tahoma", 24), Brushes.Black,
+                            new PointF(0, 0));
 
-            //            g.Flush();
-            //            g.Dispose();
-            //        }
+                        g.Flush();
+                        g.Dispose();
+                    }
 
-            //        //var destination = Path.Combine(AppDomain.CurrentDomain.BaseDirectory,
-            //        //    "test" + frameNumber + ".bmp");
-            //        //if(File.Exists(destination))
-            //        //    File.Delete(destination);
+                    //var destination = Path.Combine(AppDomain.CurrentDomain.BaseDirectory,
+                    //    "test" + frameNumber + ".bmp");
+                    //if(File.Exists(destination))
+                    //    File.Delete(destination);
 
-            //        //image.Save(destination);
+                    //image.Save(destination);
 
-            //        return image;
-            //    });
-            //}
-            Console.ReadLine();
+                    return image;
+                });
+            }
         }
     }
 }
