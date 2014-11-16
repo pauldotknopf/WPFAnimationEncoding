@@ -2,6 +2,8 @@
 #include "VideoReEncoder.h"
 #include "Exceptions.h"
 
+#define LINE_SZ 1024
+
 namespace WPFAnimationEncoding
 {
 	struct InputOutputContext 
@@ -155,8 +157,47 @@ namespace WPFAnimationEncoding
 		// copy all the stream information from the input file, to the output file
 		for (int i = 0; i < session->input.formatContext->nb_streams; i++)
 		{
-			if (i <= 1){
-				// create the new stream
+			if (i == session->input.videoStream->index)
+			{
+				libffmpeg::AVCodec* codec = libffmpeg::avcodec_find_encoder(session->input.codecContext->codec_id);
+				libffmpeg::AVStream* outStream = libffmpeg::avformat_new_stream(session->output.formatContext, codec);
+				if (!outStream)
+					throw gcnew VideoException("Failed allocating output stream");
+
+				session->output.codec = codec;
+				session->output.codecContext = outStream->codec;
+
+				// put sample parameters
+				session->output.codecContext->bit_rate = 4000000;
+				session->output.codecContext->width = session->input.codecContext->width;
+				session->output.codecContext->height = session->input.codecContext->width;
+
+				// time base: this is the fundamental unit of time (in seconds) in terms
+				// of which frame timestamps are represented. for fixed-fps content,
+				// timebase should be 1/framerate and timestamp increments should be
+				// identically 1.
+				session->output.codecContext->time_base.den = session->input.codecContext->time_base.den;
+				session->output.codecContext->time_base.num = 1;
+
+				session->output.codecContext->gop_size = 12; // emit one intra frame every twelve frames at most
+				session->output.codecContext->pix_fmt = session->input.codecContext->pix_fmt;
+
+				if (session->output.codecContext->codec_id == libffmpeg::CODEC_ID_MPEG1VIDEO)
+				{
+					// Needed to avoid using macroblocks in which some coeffs overflow.
+					// This does not happen with normal video, it just happens here as
+					// the motion of the chroma plane does not match the luma plane.
+					session->output.codecContext->mb_decision = 2;
+				}
+
+				// some formats want stream headers to be separate
+				if (session->output.formatContext->oformat->flags & AVFMT_GLOBALHEADER)
+				{
+					session->output.codecContext->flags |= CODEC_FLAG_GLOBAL_HEADER;
+				}
+			}
+			else
+			{
 				libffmpeg::AVStream *outStream = libffmpeg::avformat_new_stream(session->output.formatContext, NULL);
 				if (!outStream)
 					throw gcnew VideoException("Failed allocating output stream");
@@ -169,15 +210,40 @@ namespace WPFAnimationEncoding
 			}
 		}
 
+		// some formats want stream headers to be separate
+		if (session->output.formatContext->oformat->flags & AVFMT_GLOBALHEADER)
+		{
+			session->output.codecContext->flags |= CODEC_FLAG_GLOBAL_HEADER;
+		}
+
 		// init muxer and write output file header
 		if (!(session->output.formatContext->oformat->flags & AVFMT_NOFILE)) {
 			result = libffmpeg::avio_open(&session->output.formatContext->pb, fileName, AVIO_FLAG_WRITE);
 			if (result < 0)
 				throw gcnew VideoException("Could not open output file. " + result);
 		}
+
+		// init the file
 		result = libffmpeg::avformat_write_header(session->output.formatContext, NULL);
 		if (result < 0)
 			throw gcnew VideoException("Error occurred when opening output file. " + result);
+
+		// open the codec
+		result = libffmpeg::avcodec_open2(session->output.codecContext, session->output.codec, NULL);
+		if (result < 0)
+			throw gcnew VideoException("Cannot open video codec.");
+
+		// create the video frame
+		session->output.videoFrame = libffmpeg::avcodec_alloc_frame();
+		if (!session->output.videoFrame)
+			throw gcnew VideoException("Couldn't create the input video frame.");
+
+		int bufferSize = libffmpeg::avpicture_get_size(session->output.codecContext->pix_fmt, session->output.codecContext->width, session->output.codecContext->height);
+		void * picture_buf = libffmpeg::av_malloc(bufferSize);
+		if (!picture_buf)
+			throw gcnew VideoException("Couldn't allocate the output frame buffer.");
+
+		libffmpeg::avpicture_fill((libffmpeg::AVPicture *) session->output.videoFrame, (libffmpeg::uint8_t *) picture_buf, session->output.codecContext->pix_fmt, session->output.codecContext->width, session->output.codecContext->height);
 	}
 
 	static Bitmap^ DecodeFrame(VideoReEncoderSession* session)
@@ -236,10 +302,23 @@ namespace WPFAnimationEncoding
 		libffmpeg::av_register_all();
 	}
 
+	static void ErrorCallback(void* ptr, int level, const char* fmt, va_list vl)
+	{
+		char line[LINE_SZ];
+		int printPrefix = 1;
+		libffmpeg::av_log_format_line(ptr, level, fmt, vl, line, LINE_SZ, &printPrefix);
+		Console::WriteLine(gcnew System::String(line));
+	}
+
 	// start the reencoding of the video file
 	void VideoReEncoder::StartReEncoding(String^ inputFileName, String^ outputFileName, VideoReEncodeCallback^ callback)
 	{
 		// http://ffmpeg.org/doxygen/trunk/doc_2examples_2transcoding_8c-example.html
+
+		libffmpeg::av_log_set_level(10);
+		libffmpeg::av_log_set_callback(ErrorCallback);
+
+
 
 		IntPtr nativeInputFileNamePointer = System::Runtime::InteropServices::Marshal::StringToHGlobalAnsi(inputFileName);
 		char* nativeInputFileName = static_cast<char*>(nativeInputFileNamePointer.ToPointer());
@@ -276,23 +355,23 @@ namespace WPFAnimationEncoding
 						{
 							callback(decodedBitmap, cancel);
 
-							// this packet is not the video we are interested in (probally audio).
-							// just remux it!
+							//// this packet is not the video we are interested in (probally audio).
+							//// just remux it!
 
-							session.packet.dts = libffmpeg::av_rescale_q_rnd(session.packet.dts,
-								session.input.formatContext->streams[session.packet.stream_index]->time_base,
-								session.output.formatContext->streams[session.packet.stream_index]->time_base,
-								(libffmpeg::AVRounding)(libffmpeg::AV_ROUND_NEAR_INF | libffmpeg::AV_ROUND_PASS_MINMAX));
+							//session.packet.dts = libffmpeg::av_rescale_q_rnd(session.packet.dts,
+							//	session.input.formatContext->streams[session.packet.stream_index]->time_base,
+							//	session.output.formatContext->streams[session.packet.stream_index]->time_base,
+							//	(libffmpeg::AVRounding)(libffmpeg::AV_ROUND_NEAR_INF | libffmpeg::AV_ROUND_PASS_MINMAX));
 
-							session.packet.pts = libffmpeg::av_rescale_q_rnd(session.packet.pts,
-								session.input.formatContext->streams[session.packet.stream_index]->time_base,
-								session.output.formatContext->streams[session.packet.stream_index]->time_base,
-								(libffmpeg::AVRounding)(libffmpeg::AV_ROUND_NEAR_INF | libffmpeg::AV_ROUND_PASS_MINMAX));
+							//session.packet.pts = libffmpeg::av_rescale_q_rnd(session.packet.pts,
+							//	session.input.formatContext->streams[session.packet.stream_index]->time_base,
+							//	session.output.formatContext->streams[session.packet.stream_index]->time_base,
+							//	(libffmpeg::AVRounding)(libffmpeg::AV_ROUND_NEAR_INF | libffmpeg::AV_ROUND_PASS_MINMAX));
 
-							result = libffmpeg::av_interleaved_write_frame(session.output.formatContext, &session.packet);
+							//result = libffmpeg::av_interleaved_write_frame(session.output.formatContext, &session.packet);
 
-							if (result < 0)
-								throw gcnew VideoException("av_interleaved_write_frame error. " + result);
+							//if (result < 0)
+							//	throw gcnew VideoException("av_interleaved_write_frame error. " + result);
 						}
 					}
 					else

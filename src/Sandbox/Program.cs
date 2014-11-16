@@ -20,6 +20,8 @@ namespace Sandbox
             _inputFile = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "h264.mov");
 
             ReEncoderTests();
+            //FileReaderTests();
+            //FileWriterTests();
 
             Console.ReadLine();
         }
@@ -54,6 +56,18 @@ namespace Sandbox
 
             fileReader.Close();
             fileWriter.Close();
+        }
+
+        static void FileReaderTests()
+        {
+            var fileReader = new WPFAnimationEncoding.VideoFileReader();
+            fileReader.Open(_inputFile);
+
+            var frame = fileReader.ReadVideoFrame();
+            while (frame != null)
+            {
+                frame = fileReader.ReadVideoFrame();
+            }
         }
 
         static void ReEncoderTests()
