@@ -44,6 +44,30 @@ namespace WPFAnimationEncoding
 			throw gcnew VideoException("Cannot find stream information.");
 	}
 
+	static void find_input_video_stream(VideoReEncoderSession* session)
+	{
+		// search for the first video stream
+		for (unsigned int i = 0; i < session->inputFormatContext->nb_streams; i++)
+		{
+			if (session->inputFormatContext->streams[i]->codec->codec_type == libffmpeg::AVMEDIA_TYPE_VIDEO)
+			{
+				// get the pointer to the codec context for the video stream
+				session->inputCodecContext = session->inputFormatContext->streams[i]->codec;
+				session->inputVideoStream = session->inputFormatContext->streams[i];
+				break;
+			}
+		}
+		if (session->inputVideoStream == NULL)
+			throw gcnew VideoException("Cannot find video stream in the specified file.");
+		if (session->inputCodecContext == NULL)
+			throw gcnew VideoException("Cannot create the input video codec context.");
+	}
+
+	static void open_input_video_codec()
+	{
+
+	}
+
 	// Class constructor
 	VideoReEncoder::VideoReEncoder(void) :
 		disposed(false)
@@ -67,24 +91,9 @@ namespace WPFAnimationEncoding
 
 		try
 		{
-			// open the input file
 			open_video(&session, nativeInputFileName);
 
-			// search for the first video stream
-			for (unsigned int i = 0; i < session.inputFormatContext->nb_streams; i++)
-			{
-				if (session.inputFormatContext->streams[i]->codec->codec_type == libffmpeg::AVMEDIA_TYPE_VIDEO)
-				{
-					// get the pointer to the codec context for the video stream
-					session.inputCodecContext = session.inputFormatContext->streams[i]->codec;
-					session.inputVideoStream = session.inputFormatContext->streams[i];
-					break;
-				}
-			}
-			if (session.inputVideoStream == NULL)
-				throw gcnew VideoException("Cannot find video stream in the specified file.");
-			if (session.inputCodecContext == NULL)
-				throw gcnew VideoException("Cannot create the input video codec context.");
+			find_input_video_stream(&session);
 
 			// find decoder for the video stream
 			session.codec = libffmpeg::avcodec_find_decoder(session.inputCodecContext->codec_id);
