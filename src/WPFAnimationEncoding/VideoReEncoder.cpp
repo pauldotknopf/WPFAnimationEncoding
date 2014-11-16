@@ -9,18 +9,23 @@ namespace WPFAnimationEncoding
 		InputOutputContext() :
 			formatContext(NULL),
 			codecContext(NULL),
-			videoStream(NULL)
+			videoStream(NULL),
+			videoFrame(NULL)
 		{
 
 		}
 		~InputOutputContext()
 		{
+			if (videoFrame != NULL)
+			{
+				libffmpeg::av_free(videoFrame);
+				videoFrame = NULL;
+			}
 			if (codecContext != NULL)
 			{
 				libffmpeg::avcodec_close(codecContext);
 				codecContext = NULL;
 			}
-
 			if (formatContext != NULL)
 			{
 				if (formatContext->oformat != NULL)
@@ -45,22 +50,34 @@ namespace WPFAnimationEncoding
 		libffmpeg::AVFormatContext *formatContext;
 		libffmpeg::AVCodecContext *codecContext;
 		libffmpeg::AVStream *videoStream;
+		libffmpeg::AVCodec *codec;
+		libffmpeg::AVFrame *videoFrame;
 	};
 	struct VideoReEncoderSession
 	{
 		VideoReEncoderSession() :
-			codec(NULL),
-			videoFrame(NULL),
 			convertContext(NULL)
 		{
 			packet.data = NULL;
 			packet.size = 0;
 		}
+		~VideoReEncoderSession()
+		{
+			// free general stuff
+			if (packet.data != NULL)
+			{
+				libffmpeg::av_free_packet(&packet);
+			}
+
+			if (convertContext != NULL)
+			{
+				convertContext = NULL;
+				libffmpeg::sws_freeContext(convertContext);
+			}
+		}
 		InputOutputContext input;
 		InputOutputContext output;
 		// general
-		libffmpeg::AVCodec *codec;
-		libffmpeg::AVFrame *videoFrame;
 		libffmpeg::SwsContext *convertContext;
 		libffmpeg::AVPacket packet;
 	};
@@ -94,12 +111,12 @@ namespace WPFAnimationEncoding
 			throw gcnew VideoException("Cannot create the input video codec context.");
 
 		// find decoder for the video stream
-		session->codec = libffmpeg::avcodec_find_decoder(session->input.codecContext->codec_id);
-		if (session->codec == NULL)
+		session->input.codec = libffmpeg::avcodec_find_decoder(session->input.codecContext->codec_id);
+		if (session->input.codec == NULL)
 			throw gcnew VideoException("Cannot find codec to decode the video stream with");
 
 		// open the codec
-		if (libffmpeg::avcodec_open2(session->input.codecContext, session->codec, NULL) < 0)
+		if (libffmpeg::avcodec_open2(session->input.codecContext, session->input.codec, NULL) < 0)
 			throw gcnew VideoException("Cannot open video codec.");
 	}
 
@@ -171,24 +188,11 @@ namespace WPFAnimationEncoding
 
 			prepate_output(&session, nativeOutputFileName);
 
-			// allocate video frame
-			session.videoFrame = libffmpeg::avcodec_alloc_frame();
-			if (session.videoFrame == NULL)
-				throw gcnew VideoException("Couldn't allocate the video frame.");
-
-			
-
 			// prepare scaling context to convert RGB image to video format
 			session.convertContext = libffmpeg::sws_getContext(session.input.codecContext->width, session.input.codecContext->height, session.input.codecContext->pix_fmt,
 				session.input.codecContext->width, session.input.codecContext->height, libffmpeg::PIX_FMT_BGR24, SWS_BICUBIC, NULL, NULL, NULL);
 			if (session.convertContext == NULL)
 				throw gcnew VideoException("Cannot initialize frames conversion context.");
-
-			
-
-			
-
-			
 
 			bool hasFrame = true;
 
@@ -225,14 +229,6 @@ namespace WPFAnimationEncoding
 		{
 			System::Runtime::InteropServices::Marshal::FreeHGlobal(nativeInputFileNamePointer);
 			System::Runtime::InteropServices::Marshal::FreeHGlobal(nativeOutputFileNamePointer);
-
-			// free general stuff
-			if (session.packet.data != NULL)
-				av_free_packet(&session.packet);
-			if (session.videoFrame != NULL)
-				libffmpeg::av_free(session.videoFrame);
-			if (session.convertContext != NULL)
-				libffmpeg::sws_freeContext(session.convertContext);
 		}
 	}
 }
