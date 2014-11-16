@@ -13,6 +13,35 @@ namespace WPFAnimationEncoding
 		{
 
 		}
+		~InputOutputContext()
+		{
+			if (codecContext != NULL)
+			{
+				libffmpeg::avcodec_close(codecContext);
+				codecContext = NULL;
+			}
+
+			if (formatContext != NULL)
+			{
+				if (formatContext->oformat != NULL)
+				{
+					if (!(formatContext->oformat->flags & AVFMT_NOFILE))
+						libffmpeg::avio_close(formatContext->pb);
+					libffmpeg::avformat_free_context(formatContext);
+				}
+				else if (formatContext->iformat != NULL)
+				{
+					libffmpeg::avformat_close_input(&formatContext);
+				}
+				else
+				{
+					libffmpeg::avformat_free_context(formatContext);
+				}
+				formatContext = NULL;
+			}
+			// do i need to free this, even though I free the format context? probally not.
+			videoStream = NULL;
+		}
 		libffmpeg::AVFormatContext *formatContext;
 		libffmpeg::AVCodecContext *codecContext;
 		libffmpeg::AVStream *videoStream;
@@ -36,7 +65,7 @@ namespace WPFAnimationEncoding
 		libffmpeg::AVPacket packet;
 	};
 
-	static void open_video(VideoReEncoderSession* session, char* fileName)
+	static void prepare_input(VideoReEncoderSession* session, char *fileName)
 	{
 		int result = libffmpeg::avformat_open_input(&session->input.formatContext, fileName, NULL, NULL);
 		if (result != 0)
@@ -47,10 +76,7 @@ namespace WPFAnimationEncoding
 		// retrieve stream information
 		if (libffmpeg::avformat_find_stream_info(session->input.formatContext, NULL) < 0)
 			throw gcnew VideoException("Cannot find stream information.");
-	}
 
-	static void find_input_video_stream(VideoReEncoderSession* session)
-	{
 		// search for the first video stream
 		for (unsigned int i = 0; i < session->input.formatContext->nb_streams; i++)
 		{
@@ -66,11 +92,56 @@ namespace WPFAnimationEncoding
 			throw gcnew VideoException("Cannot find video stream in the specified file.");
 		if (session->input.codecContext == NULL)
 			throw gcnew VideoException("Cannot create the input video codec context.");
+
+		// find decoder for the video stream
+		session->codec = libffmpeg::avcodec_find_decoder(session->input.codecContext->codec_id);
+		if (session->codec == NULL)
+			throw gcnew VideoException("Cannot find codec to decode the video stream with");
+
+		// open the codec
+		if (libffmpeg::avcodec_open2(session->input.codecContext, session->codec, NULL) < 0)
+			throw gcnew VideoException("Cannot open video codec.");
 	}
 
-	static void open_input_video_codec()
+	static void prepate_output(VideoReEncoderSession* session, char *fileName)
 	{
+		// make sure we opened the input first
+		if (!session->input.formatContext)
+			throw gcnew VideoException("You have to prepare the input before preparing the output.");
 
+		// open the output file
+		int result = libffmpeg::avformat_alloc_output_context2(&session->output.formatContext, NULL, NULL, fileName);
+		if (result != 0)
+			throw gcnew VideoException("Output avformat_alloc_output_context2 error " + result);
+		if (!session->output.formatContext)
+			throw gcnew VideoException("Couldn't create output format context.");
+
+		// copy all the stream information from the input file, to the output file
+		for (int i = 0; i < session->input.formatContext->nb_streams; i++)
+		{
+			if (i <= 1){
+				// create the new stream
+				libffmpeg::AVStream *outStream = libffmpeg::avformat_new_stream(session->output.formatContext, NULL);
+				if (!outStream)
+					throw gcnew VideoException("Failed allocating output stream");
+
+				// cope all the information about the stream from the input, to the output
+				result = libffmpeg::avcodec_copy_context(session->output.formatContext->streams[i]->codec,
+					session->input.formatContext->streams[i]->codec);
+				if (result < 0)
+					throw gcnew VideoException("Copying stream context failed. " + result);
+			}
+		}
+
+		// init muxer and write output file header
+		if (!(session->output.formatContext->oformat->flags & AVFMT_NOFILE)) {
+			result = libffmpeg::avio_open(&session->output.formatContext->pb, fileName, AVIO_FLAG_WRITE);
+			if (result < 0)
+				throw gcnew VideoException("Could not open output file. " + result);
+		}
+		result = libffmpeg::avformat_write_header(session->output.formatContext, NULL);
+		if (result < 0)
+			throw gcnew VideoException("Error occurred when opening output file. " + result);
 	}
 
 	// Class constructor
@@ -96,23 +167,16 @@ namespace WPFAnimationEncoding
 
 		try
 		{
-			open_video(&session, nativeInputFileName);
+			prepare_input(&session, nativeInputFileName);
 
-			find_input_video_stream(&session);
-
-			// find decoder for the video stream
-			session.codec = libffmpeg::avcodec_find_decoder(session.input.codecContext->codec_id);
-			if (session.codec == NULL)
-				throw gcnew VideoException("Cannot find codec to decode the video stream with");
-
-			// open the codec
-			if (libffmpeg::avcodec_open2(session.input.codecContext, session.codec, NULL) < 0)
-				throw gcnew VideoException("Cannot open video codec.");
+			prepate_output(&session, nativeOutputFileName);
 
 			// allocate video frame
 			session.videoFrame = libffmpeg::avcodec_alloc_frame();
 			if (session.videoFrame == NULL)
 				throw gcnew VideoException("Couldn't allocate the video frame.");
+
+			
 
 			// prepare scaling context to convert RGB image to video format
 			session.convertContext = libffmpeg::sws_getContext(session.input.codecContext->width, session.input.codecContext->height, session.input.codecContext->pix_fmt,
@@ -120,39 +184,11 @@ namespace WPFAnimationEncoding
 			if (session.convertContext == NULL)
 				throw gcnew VideoException("Cannot initialize frames conversion context.");
 
-			// open the output file
-			result = libffmpeg::avformat_alloc_output_context2(&session.output.formatContext, NULL, NULL, nativeOutputFileName);
-			if (result != 0)
-				throw gcnew VideoException("Output avformat_alloc_output_context2 error " + result);
-			if (!session.input.formatContext)
-				throw gcnew VideoException("Couldn't create output format context.");
+			
 
-			// copy all the stream information from the input file, to the output file
-			for (int i = 0; i < session.input.formatContext->nb_streams; i++)
-			{
-				if (i <= 1){
-					// create the new stream
-					libffmpeg::AVStream *outStream = libffmpeg::avformat_new_stream(session.output.formatContext, NULL);
-					if (!outStream)
-						throw gcnew VideoException("Failed allocating output stream");
+			
 
-					// cope all the information about the stream from the input, to the output
-					result = libffmpeg::avcodec_copy_context(session.output.formatContext->streams[i]->codec,
-						session.input.formatContext->streams[i]->codec);
-					if (result < 0)
-						throw gcnew VideoException("Copying stream context failed. " + result);
-				}
-			}
-
-			// init muxer and write output file header
-			if (!(session.output.formatContext->oformat->flags & AVFMT_NOFILE)) {
-				result = libffmpeg::avio_open(&session.output.formatContext->pb, nativeOutputFileName, AVIO_FLAG_WRITE);
-				if (result < 0)
-					throw gcnew VideoException("Could not open output file. " + result);
-			}
-			result = libffmpeg::avformat_write_header(session.output.formatContext, NULL);
-			if (result < 0)
-				throw gcnew VideoException("Error occurred when opening output file. " + result);
+			
 
 			bool hasFrame = true;
 
@@ -195,21 +231,8 @@ namespace WPFAnimationEncoding
 				av_free_packet(&session.packet);
 			if (session.videoFrame != NULL)
 				libffmpeg::av_free(session.videoFrame);
-			if (session.input.codecContext != NULL)
-				libffmpeg::avcodec_close(session.input.codecContext);
 			if (session.convertContext != NULL)
 				libffmpeg::sws_freeContext(session.convertContext);
-
-			// close the output file
-			if (session.output.formatContext != NULL) {
-				if (session.output.formatContext && !(session.output.formatContext->oformat->flags & AVFMT_NOFILE))
-					libffmpeg::avio_close(session.output.formatContext->pb);
-				libffmpeg::avformat_free_context(session.output.formatContext);
-			}
-
-			// close the input file
-			if (session.input.formatContext != NULL)
-				libffmpeg::avformat_close_input(&session.input.formatContext);
 		}
 	}
 }
