@@ -15,6 +15,8 @@ namespace libffmpeg
 		#include "libavformat\avio.h"
 		#include "libavcodec\avcodec.h"
 		#include "libswscale\swscale.h"
+		#include "libavutil\imgutils.h"
+
 		#undef PixelFormat
 	}
 }

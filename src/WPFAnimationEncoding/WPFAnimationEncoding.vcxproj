@@ -83,6 +83,7 @@
   <ItemGroup>
     <ClInclude Include="Exceptions.h" />
     <ClInclude Include="libffmpeg.h" />
+    <ClInclude Include="Logging.h" />
     <ClInclude Include="resource.h" />
     <ClInclude Include="Sandbox.h" />
     <ClInclude Include="Stdafx.h" />
@@ -94,6 +95,7 @@
   <ItemGroup>
     <ClCompile Include="AssemblyInfo.cpp" />
     <ClCompile Include="Exceptions.cpp" />
+    <ClCompile Include="Logging.cpp" />
     <ClCompile Include="Sandbox.cpp" />
     <ClCompile Include="Stdafx.cpp">
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">Create</PrecompiledHeader>

@@ -19,9 +19,11 @@ namespace Sandbox
 
             _inputFile = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "h264.mov");
 
-            ReEncoderTests();
+            Logging.Init();
+
+            //ReEncoderTests();
             //FileReaderTests();
-            //FileWriterTests();
+            FileWriterTests();
 
             Console.ReadLine();
         }
@@ -37,7 +39,7 @@ namespace Sandbox
             var fileReader = new WPFAnimationEncoding.VideoFileReader();
             fileReader.Open(_inputFile);
             var fileWriter = new WPFAnimationEncoding.VideoFileWriter();
-            fileWriter.Open(_outputFile, 640, 360, fileReader.FrameRate, VideoCodec.Default, 30000000);
+            fileWriter.Open(_outputFile, fileReader.Width, fileReader.Height, fileReader.FrameRate, VideoCodec.Default, 30000000);
 
             var frame = fileReader.ReadVideoFrame();
 
@@ -81,7 +83,7 @@ namespace Sandbox
                 (Bitmap image, ref bool cancel) =>
                 {
                     frameNumber++;
-
+                    return image;
                     using (var g = Graphics.FromImage(image))
                     {
                         g.SmoothingMode = SmoothingMode.AntiAlias;
