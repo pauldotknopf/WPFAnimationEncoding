@@ -32,21 +32,30 @@
     <WarningLevel>4</WarningLevel>
   </PropertyGroup>
   <ItemGroup>
+    <Reference Include="PresentationCore" />
+    <Reference Include="PresentationFramework" />
     <Reference Include="System" />
     <Reference Include="System.Core" />
     <Reference Include="System.Drawing" />
+    <Reference Include="System.Xaml" />
     <Reference Include="System.Xml.Linq" />
     <Reference Include="System.Data.DataSetExtensions" />
     <Reference Include="Microsoft.CSharp" />
     <Reference Include="System.Data" />
     <Reference Include="System.Xml" />
+    <Reference Include="WindowsBase" />
   </ItemGroup>
   <ItemGroup>
+    <Compile Include="PrintingXamlHelper.cs" />
     <Compile Include="Program.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
+    <Compile Include="WPF\AnimationAlongAPathExample.xaml.cs">
+      <DependentUpon>AnimationAlongAPathExample.xaml</DependentUpon>
+    </Compile>
   </ItemGroup>
   <ItemGroup>
     <None Include="App.config" />
+    <Resource Include="WPF\SampleImages\Thumbs.db" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\WPFAnimationEncoding\WPFAnimationEncoding.vcxproj">
@@ -99,6 +108,25 @@
       <Link>h264.mp4</Link>
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
+  </ItemGroup>
+  <ItemGroup>
+    <Page Include="WPF\AnimationAlongAPathExample.xaml">
+      <SubType>Designer</SubType>
+      <Generator>MSBuild:Compile</Generator>
+    </Page>
+  </ItemGroup>
+  <ItemGroup>
+    <Resource Include="WPF\SampleImages\berries.jpg" />
+    <Resource Include="WPF\SampleImages\branches.png" />
+    <Resource Include="WPF\SampleImages\leafpicturecube2R000003.png" />
+    <Resource Include="WPF\SampleImages\leafpicturecube2R000005.png" />
+    <Resource Include="WPF\SampleImages\leaves_closeup.png" />
+    <Resource Include="WPF\SampleImages\rippled_metal_smaller.png" />
+    <Resource Include="WPF\SampleImages\rocks.jpg" />
+    <Resource Include="WPF\SampleImages\rocks.png" />
+    <Resource Include="WPF\SampleImages\Sunset.jpg" />
+    <Resource Include="WPF\SampleImages\Waterlilies.jpg" />
+    <Resource Include="WPF\SampleImages\Waterlilies.png" />
   </ItemGroup>
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
   <!-- To modify your build process, add your task inside one of the targets below and uncomment it. 

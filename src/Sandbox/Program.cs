@@ -2,6 +2,12 @@
 using System.Drawing;
 using System.Drawing.Drawing2D;
 using System.IO;
+using System.IO.Pipes;
+using System.Windows;
+using System.Windows.Media;
+using System.Windows.Media.Animation;
+using System.Windows.Media.Imaging;
+using Sandbox.WPF;
 using WPFAnimationEncoding;
 
 namespace Sandbox
@@ -74,36 +80,60 @@ namespace Sandbox
 
         static void ReEncoderTests()
         {
+            AnimationAlongAPathExample animation = null;
+            
             using (var file = new VideoReEncoder())
             {
-            var frameNumber = 0;
+                var frameNumber = 0;
 
-            file.StartReEncoding(_inputFile, 
-                _outputFile,
-                (Bitmap image, ref bool cancel) =>
-                {
-                    frameNumber++;
-                    using (var g = Graphics.FromImage(image))
+                file.StartReEncoding(_inputFile,
+                    _outputFile,
+                    (Bitmap image, ref bool cancel) =>
                     {
-                        g.SmoothingMode = SmoothingMode.AntiAlias;
-                        g.InterpolationMode = InterpolationMode.HighQualityBicubic;
-                        g.PixelOffsetMode = PixelOffsetMode.HighQuality;
-                        g.DrawString("Frame number " + frameNumber, new Font("Tahoma", 24), Brushes.Black,
-                            new PointF(0, 0));
+                        frameNumber++;
+                        Bitmap animationBitmap = null;
 
-                        g.Flush();
-                        g.Dispose();
-                    }
+                        PrintingXamlHelper.Invoke(() =>
+                        {
+                            if (animation == null)
+                            {
+                                animation = new AnimationAlongAPathExample();
+                                var size = new System.Windows.Size(image.Width, image.Height);
+                                animation.Measure(size);
+                                animation.Arrange(new Rect(size));
+                                animation.UpdateLayout();
+                                animation.MainStoryboard.Pause();
+                                animation.MainStoryboard.Begin();
+                            }
 
-                    //var destination = Path.Combine(AppDomain.CurrentDomain.BaseDirectory,
-                    //    "test" + frameNumber + ".bmp");
-                    //if(File.Exists(destination))
-                    //    File.Delete(destination);
+                            animation.MainStoryboard.SeekAlignedToLastTick(TimeSpan.FromMilliseconds(frameNumber * 10));
 
-                    //image.Save(destination);
+                            const double dpi = 96d;
+                            var render = new RenderTargetBitmap((int)(image.Width / 96d * dpi), (int)(image.Height / 96d * dpi), dpi, dpi, PixelFormats.Pbgra32);
 
-                    return image;
-                });
+                            render.Render(animation);
+
+                            var stream = new MemoryStream();
+                            BitmapEncoder encoder = new PngBitmapEncoder();
+                            encoder.Frames.Add(BitmapFrame.Create(render));
+                            encoder.Save(stream);
+
+                            animationBitmap = new Bitmap(stream);
+                        });
+
+                        if(animationBitmap == null)
+                            throw new Exception("Couldn't generate an animation");
+                        using (var g = Graphics.FromImage(image))
+                        {
+                            g.SmoothingMode = SmoothingMode.AntiAlias;
+                            g.InterpolationMode = InterpolationMode.HighQualityBicubic;
+                            g.PixelOffsetMode = PixelOffsetMode.HighQuality;
+                            g.DrawImage(animationBitmap, new Rectangle(0,0, animationBitmap.Width, animationBitmap.Height));
+                            g.Flush();
+                            g.Dispose();
+                        }
+                        return image;
+                    });
             }
         }
     }
