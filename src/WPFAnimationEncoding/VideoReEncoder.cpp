@@ -168,16 +168,19 @@ namespace WPFAnimationEncoding
 				session->output.codecContext = outStream->codec;
 
 				// put sample parameters
-				session->output.codecContext->bit_rate = 4000000;
+				session->output.codecContext->bit_rate = 400000000;
 				session->output.codecContext->width = session->input.codecContext->width;
-				session->output.codecContext->height = session->input.codecContext->width;
+				session->output.codecContext->height = session->input.codecContext->height;
 
 				// time base: this is the fundamental unit of time (in seconds) in terms
 				// of which frame timestamps are represented. for fixed-fps content,
 				// timebase should be 1/framerate and timestamp increments should be
 				// identically 1.
-				session->output.codecContext->time_base.den = session->input.codecContext->time_base.den;
-				session->output.codecContext->time_base.num = 1;
+				session->output.codecContext->time_base.den = session->input.videoStream->r_frame_rate.den;
+				session->output.codecContext->time_base.num = session->input.videoStream->r_frame_rate.num;
+
+				Console::WriteLine(session->output.codecContext->time_base.den);
+				Console::WriteLine(session->output.codecContext->time_base.num);
 
 				session->output.codecContext->gop_size = 12; // emit one intra frame every twelve frames at most
 				session->output.codecContext->pix_fmt = session->input.codecContext->pix_fmt;
@@ -195,6 +198,8 @@ namespace WPFAnimationEncoding
 				{
 					session->output.codecContext->flags |= CODEC_FLAG_GLOBAL_HEADER;
 				}
+
+				session->output.videoStream = outStream;
 			}
 			else
 			{
@@ -233,20 +238,29 @@ namespace WPFAnimationEncoding
 		if (result < 0)
 			throw gcnew VideoException("Cannot open video codec.");
 
-		// create the video frame
 		session->output.videoFrame = libffmpeg::avcodec_alloc_frame();
-		if (!session->output.videoFrame)
-			throw gcnew VideoException("Couldn't create the input video frame.");
+		session->output.videoFrame->format = session->output.codecContext->pix_fmt;
+		session->output.videoFrame->width = session->output.codecContext->width;
+		session->output.videoFrame->height = session->output.codecContext->height;
 
-		int bufferSize = libffmpeg::avpicture_get_size(session->output.codecContext->pix_fmt, session->output.codecContext->width, session->output.codecContext->height);
-		void * picture_buf = libffmpeg::av_malloc(bufferSize);
-		if (!picture_buf)
-			throw gcnew VideoException("Couldn't allocate the output frame buffer.");
+		result = libffmpeg::av_image_alloc(session->output.videoFrame->data, session->output.videoFrame->linesize, session->output.videoFrame->width, session->output.videoFrame->height, session->output.codecContext->pix_fmt, 32);
+		if (result < 0)
+			throw gcnew VideoException("Couldn't allocate frame for encoded video");
 
-		libffmpeg::avpicture_fill((libffmpeg::AVPicture *) session->output.videoFrame, (libffmpeg::uint8_t *) picture_buf, session->output.codecContext->pix_fmt, session->output.codecContext->width, session->output.codecContext->height);
+		//// create the video frame
+		//session->output.videoFrame = libffmpeg::avcodec_alloc_frame();
+		//if (!session->output.videoFrame)
+		//	throw gcnew VideoException("Couldn't create the input video frame.");
+
+		//int bufferSize = libffmpeg::avpicture_get_size(session->output.codecContext->pix_fmt, session->output.codecContext->width, session->output.codecContext->height);
+		//void * picture_buf = libffmpeg::av_malloc(bufferSize);
+		//if (!picture_buf)
+		//	throw gcnew VideoException("Couldn't allocate the output frame buffer.");
+
+		//libffmpeg::avpicture_fill((libffmpeg::AVPicture *) session->output.videoFrame, (libffmpeg::uint8_t *) picture_buf, session->output.codecContext->pix_fmt, session->output.codecContext->width, session->output.codecContext->height);
 	}
 
-	static Bitmap^ DecodeFrame(VideoReEncoderSession* session)
+	static Bitmap^ decode_frame(VideoReEncoderSession* session)
 	{
 		int frameFinished;
 		Bitmap^ bitmap = nullptr;
@@ -295,6 +309,54 @@ namespace WPFAnimationEncoding
 		return bitmap;
 	}
 
+	static bool encode_frame(VideoReEncoderSession* session, Bitmap^ bitmap, libffmpeg::AVPacket* packet)
+	{
+		if ((bitmap->PixelFormat != PixelFormat::Format24bppRgb) &&
+			(bitmap->PixelFormat != PixelFormat::Format32bppArgb) &&
+			(bitmap->PixelFormat != PixelFormat::Format32bppPArgb) &&
+			(bitmap->PixelFormat != PixelFormat::Format32bppRgb) &&
+			(bitmap->PixelFormat != PixelFormat::Format8bppIndexed))
+			throw gcnew ArgumentException("The provided bitmap must be 24 or 32 bpp color image or 8 bpp grayscale image.");
+
+		if ((session->output.codecContext->width != bitmap->Width) || (session->output.codecContext->height != bitmap->Height))
+			throw gcnew ArgumentException("Bitmap size must be of the same as video size ");
+
+		// lock the bitmap
+		BitmapData^ bitmapData = bitmap->LockBits(System::Drawing::Rectangle(0, 0, bitmap->Width, bitmap->Height),
+			ImageLockMode::ReadOnly,
+			(bitmap->PixelFormat == PixelFormat::Format8bppIndexed) ? PixelFormat::Format8bppIndexed : PixelFormat::Format24bppRgb);
+
+		libffmpeg::uint8_t* ptr = reinterpret_cast<libffmpeg::uint8_t*>(static_cast<void*>(bitmapData->Scan0));
+
+		libffmpeg::uint8_t* srcData[4] = { ptr, NULL, NULL, NULL };
+		int srcLinesize[4] = { bitmapData->Stride, 0, 0, 0 };
+
+		// convert source image to the format of the video file
+		if (bitmap->PixelFormat == PixelFormat::Format8bppIndexed)
+		{
+			libffmpeg::sws_scale(session->outputGrayscaleContext, srcData, srcLinesize, 0, bitmap->Height, session->output.videoFrame->data, session->output.videoFrame->linesize);
+		}
+		else
+		{
+			libffmpeg::sws_scale(session->outputConvertContext, srcData, srcLinesize, 0, bitmap->Height, session->output.videoFrame->data, session->output.videoFrame->linesize);
+		}
+
+		bitmap->UnlockBits(bitmapData);
+
+		int gotFrame;
+		
+		int result = libffmpeg::avcodec_encode_video2(session->output.codecContext, packet, session->output.videoFrame, &gotFrame);
+		if (result < 0)
+			throw gcnew VideoException("Error encoding video. " + result);
+
+		if (gotFrame)
+		{
+			return true;
+		}
+
+		return false;
+	}
+
 	// Class constructor
 	VideoReEncoder::VideoReEncoder(void) :
 		disposed(false)
@@ -302,23 +364,10 @@ namespace WPFAnimationEncoding
 		libffmpeg::av_register_all();
 	}
 
-	static void ErrorCallback(void* ptr, int level, const char* fmt, va_list vl)
-	{
-		char line[LINE_SZ];
-		int printPrefix = 1;
-		libffmpeg::av_log_format_line(ptr, level, fmt, vl, line, LINE_SZ, &printPrefix);
-		Console::WriteLine(gcnew System::String(line));
-	}
-
 	// start the reencoding of the video file
 	void VideoReEncoder::StartReEncoding(String^ inputFileName, String^ outputFileName, VideoReEncodeCallback^ callback)
 	{
 		// http://ffmpeg.org/doxygen/trunk/doc_2examples_2transcoding_8c-example.html
-
-		libffmpeg::av_log_set_level(10);
-		libffmpeg::av_log_set_callback(ErrorCallback);
-
-
 
 		IntPtr nativeInputFileNamePointer = System::Runtime::InteropServices::Marshal::StringToHGlobalAnsi(inputFileName);
 		char* nativeInputFileName = static_cast<char*>(nativeInputFileNamePointer.ToPointer());
@@ -335,11 +384,24 @@ namespace WPFAnimationEncoding
 
 			prepate_output(&session, nativeOutputFileName);
 
-			// prepare scaling context to convert RGB image to video format
 			session.inputConvertContext = libffmpeg::sws_getContext(session.input.codecContext->width, session.input.codecContext->height, session.input.codecContext->pix_fmt,
 				session.input.codecContext->width, session.input.codecContext->height, libffmpeg::PIX_FMT_BGR24, SWS_BICUBIC, NULL, NULL, NULL);
 			if (session.inputConvertContext == NULL)
 				throw gcnew VideoException("Cannot initialize input frames conversion context.");
+
+			session.outputConvertContext = libffmpeg::sws_getContext(session.output.codecContext->width, session.output.codecContext->height, libffmpeg::PIX_FMT_BGR24,
+				session.output.codecContext->width, session.output.codecContext->height, session.output.codecContext->pix_fmt,
+				SWS_BICUBIC, NULL, NULL, NULL);
+			if (session.outputConvertContext == NULL)
+				throw gcnew VideoException("Cannot initialize output frames conversion context.");
+
+			session.outputGrayscaleContext = libffmpeg::sws_getContext(session.output.codecContext->width, session.output.codecContext->height, libffmpeg::PIX_FMT_GRAY8,
+				session.output.codecContext->width, session.output.codecContext->height, session.output.codecContext->pix_fmt,
+				SWS_BICUBIC, NULL, NULL, NULL);
+			if (session.outputGrayscaleContext == NULL)
+				throw gcnew VideoException("Cannot initialize output grayscale frames conversion context.");
+
+			unsigned long packetNumber = 0;
 
 			bool hasFrame = true;
 			bool cancel = false;
@@ -350,28 +412,50 @@ namespace WPFAnimationEncoding
 					if (session.packet.stream_index == session.input.videoStream->index)
 					{
 						// this packet is video!
-						Bitmap^ decodedBitmap = DecodeFrame(&session);
+						Bitmap^ decodedBitmap = decode_frame(&session);
 						if (decodedBitmap != nullptr)
 						{
-							callback(decodedBitmap, cancel);
+							Bitmap^ newBitmap = callback(decodedBitmap, cancel);
+							if (newBitmap == nullptr)
+								throw gcnew Exception("You must return a bitmap to re-encode!");
 
-							//// this packet is not the video we are interested in (probally audio).
-							//// just remux it!
+							libffmpeg::AVPacket newPacket;
+							libffmpeg::av_init_packet(&newPacket);
+							newPacket.data = NULL;
+							newPacket.size = 0;
+							session.output.videoFrame->pts = packetNumber;
 
-							//session.packet.dts = libffmpeg::av_rescale_q_rnd(session.packet.dts,
-							//	session.input.formatContext->streams[session.packet.stream_index]->time_base,
-							//	session.output.formatContext->streams[session.packet.stream_index]->time_base,
-							//	(libffmpeg::AVRounding)(libffmpeg::AV_ROUND_NEAR_INF | libffmpeg::AV_ROUND_PASS_MINMAX));
+							if (encode_frame(&session, newBitmap, &newPacket))
+							{
+								/*newPacket.dts = libffmpeg::av_rescale_q_rnd(packetNumber,
+									session.input.formatContext->streams[session.packet.stream_index]->time_base,
+									session.output.formatContext->streams[session.packet.stream_index]->time_base,
+									(libffmpeg::AVRounding)(libffmpeg::AV_ROUND_NEAR_INF | libffmpeg::AV_ROUND_PASS_MINMAX));
 
-							//session.packet.pts = libffmpeg::av_rescale_q_rnd(session.packet.pts,
-							//	session.input.formatContext->streams[session.packet.stream_index]->time_base,
-							//	session.output.formatContext->streams[session.packet.stream_index]->time_base,
-							//	(libffmpeg::AVRounding)(libffmpeg::AV_ROUND_NEAR_INF | libffmpeg::AV_ROUND_PASS_MINMAX));
+								newPacket.pts = libffmpeg::av_rescale_q_rnd(packetNumber,
+									session.input.formatContext->streams[session.packet.stream_index]->time_base,
+									session.output.formatContext->streams[session.packet.stream_index]->time_base,
+									(libffmpeg::AVRounding)(libffmpeg::AV_ROUND_NEAR_INF | libffmpeg::AV_ROUND_PASS_MINMAX));*/
 
-							//result = libffmpeg::av_interleaved_write_frame(session.output.formatContext, &session.packet);
+							/*	libffmpeg::av_rescale_q(data->VideoFrame->pts, codecContext->time_base, data->VideoStream->time_base)*/
 
-							//if (result < 0)
-							//	throw gcnew VideoException("av_interleaved_write_frame error. " + result);
+								//newPacket.pts = libffmpeg::av_rescale_q(session.output.videoFrame->pts, session.output.codecContext->time_base, session.output.videoStream->time_base); //input. codecContext->time_base, data->VideoStream->time_base);
+								//newPacket.dts = newPacket.pts;
+
+								Console::WriteLine("dts: " + newPacket.dts);
+								Console::WriteLine("pts:" + newPacket.pts);
+
+								newPacket.stream_index = session.packet.stream_index;
+
+								result = libffmpeg::av_interleaved_write_frame(session.output.formatContext, &newPacket);
+
+								if (result < 0)
+									throw gcnew VideoException("av_interleaved_write_frame error. " + result);
+							}
+
+							packetNumber++;
+
+							libffmpeg::av_free_packet(&newPacket);
 						}
 					}
 					else
@@ -394,8 +478,6 @@ namespace WPFAnimationEncoding
 						if (result < 0)
 							throw gcnew VideoException("av_interleaved_write_frame error. " + result);
 					}
-
-					
 
 					av_free_packet(&session.packet);
 				}
