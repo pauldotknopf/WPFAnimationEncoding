@@ -21,9 +21,9 @@ namespace Sandbox
 
             Logging.Init();
 
-            //ReEncoderTests();
+            ReEncoderTests();
             //FileReaderTests();
-            FileWriterTests();
+            //FileWriterTests();
 
             Console.ReadLine();
         }
@@ -83,7 +83,6 @@ namespace Sandbox
                 (Bitmap image, ref bool cancel) =>
                 {
                     frameNumber++;
-                    return image;
                     using (var g = Graphics.FromImage(image))
                     {
                         g.SmoothingMode = SmoothingMode.AntiAlias;

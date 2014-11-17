@@ -176,8 +176,8 @@ namespace WPFAnimationEncoding
 				// of which frame timestamps are represented. for fixed-fps content,
 				// timebase should be 1/framerate and timestamp increments should be
 				// identically 1.
-				session->output.codecContext->time_base.den = session->input.videoStream->r_frame_rate.den;
-				session->output.codecContext->time_base.num = session->input.videoStream->r_frame_rate.num;
+				session->output.codecContext->time_base.den = session->input.videoStream->r_frame_rate.num;
+				session->output.codecContext->time_base.num = session->input.videoStream->r_frame_rate.den;
 
 				Console::WriteLine(session->output.codecContext->time_base.den);
 				Console::WriteLine(session->output.codecContext->time_base.num);
@@ -427,25 +427,19 @@ namespace WPFAnimationEncoding
 
 							if (encode_frame(&session, newBitmap, &newPacket))
 							{
-								/*newPacket.dts = libffmpeg::av_rescale_q_rnd(packetNumber,
-									session.input.formatContext->streams[session.packet.stream_index]->time_base,
+								newPacket.dts = libffmpeg::av_rescale_q_rnd(newPacket.dts,
+									session.output.codecContext->time_base,
 									session.output.formatContext->streams[session.packet.stream_index]->time_base,
 									(libffmpeg::AVRounding)(libffmpeg::AV_ROUND_NEAR_INF | libffmpeg::AV_ROUND_PASS_MINMAX));
 
-								newPacket.pts = libffmpeg::av_rescale_q_rnd(packetNumber,
-									session.input.formatContext->streams[session.packet.stream_index]->time_base,
+								newPacket.pts = libffmpeg::av_rescale_q_rnd(newPacket.pts,
+									session.output.codecContext->time_base,
 									session.output.formatContext->streams[session.packet.stream_index]->time_base,
-									(libffmpeg::AVRounding)(libffmpeg::AV_ROUND_NEAR_INF | libffmpeg::AV_ROUND_PASS_MINMAX));*/
-
-							/*	libffmpeg::av_rescale_q(data->VideoFrame->pts, codecContext->time_base, data->VideoStream->time_base)*/
-
-								//newPacket.pts = libffmpeg::av_rescale_q(session.output.videoFrame->pts, session.output.codecContext->time_base, session.output.videoStream->time_base); //input. codecContext->time_base, data->VideoStream->time_base);
-								//newPacket.dts = newPacket.pts;
-
-								Console::WriteLine("dts: " + newPacket.dts);
-								Console::WriteLine("pts:" + newPacket.pts);
+									(libffmpeg::AVRounding)(libffmpeg::AV_ROUND_NEAR_INF | libffmpeg::AV_ROUND_PASS_MINMAX));
 
 								newPacket.stream_index = session.packet.stream_index;
+
+								libffmpeg::log_packet(session.output.formatContext, &newPacket);
 
 								result = libffmpeg::av_interleaved_write_frame(session.output.formatContext, &newPacket);
 

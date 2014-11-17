@@ -238,12 +238,6 @@ namespace WPFAnimationEncoding
 					break;
 				}
 
-				if (data->Packet->stream_index == data->VideoStream->index)
-				{
-					System::Console::WriteLine("pts:" + data->Packet->pts);
-					System::Console::WriteLine("dts:" + data->Packet->dts);
-				}
-
 			} while (data->Packet->stream_index != data->VideoStream->index);
 
 			// exit ?

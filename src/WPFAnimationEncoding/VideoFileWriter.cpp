@@ -348,9 +348,6 @@ namespace WPFAnimationEncoding {
 
 				packet.stream_index = data->VideoStream->index;
 
-				Console::WriteLine("pts:" + packet.pts);
-				Console::WriteLine("dts:" + packet.dts);
-
 				// write the compressed frame to the media file
 				ret = libffmpeg::av_interleaved_write_frame(data->FormatContext, &packet);
 			}
