@@ -50,9 +50,6 @@ namespace WPFAnimationEncoding {
 		struct libffmpeg::SwsContext*   ConvertContext;
 		struct libffmpeg::SwsContext*   ConvertContextGrayscale;
 
-		libffmpeg::uint8_t*     VideoOutputBuffer;
-		int VideoOutputBufferSize;
-
 		WriterPrivateData()
 		{
 			FormatContext = NULL;
@@ -60,7 +57,6 @@ namespace WPFAnimationEncoding {
 			VideoFrame = NULL;
 			ConvertContext = NULL;
 			ConvertContextGrayscale = NULL;
-			VideoOutputBuffer = NULL;
 		}
 	};
 #pragma endregion
@@ -229,11 +225,6 @@ namespace WPFAnimationEncoding {
 					libffmpeg::av_free(data->VideoFrame);
 				}
 
-				if (data->VideoOutputBuffer)
-				{
-					libffmpeg::av_free(data->VideoOutputBuffer);
-				}
-
 				for (unsigned int i = 0; i < data->FormatContext->nb_streams; i++)
 				{
 					libffmpeg::av_freep(&data->FormatContext->streams[i]->codec);
@@ -329,6 +320,7 @@ namespace WPFAnimationEncoding {
 	{
 		libffmpeg::AVCodecContext* codecContext = data->VideoStream->codec;
 		int out_size, ret = 0;
+		int gotFrame;
 
 		if (data->FormatContext->oformat->flags & AVFMT_RAWPICTURE)
 		{
@@ -337,36 +329,33 @@ namespace WPFAnimationEncoding {
 		else
 		{
 			// encode the image
-			out_size = libffmpeg::avcodec_encode_video(codecContext, data->VideoOutputBuffer,
-				data->VideoOutputBufferSize, data->VideoFrame);
+			libffmpeg::AVPacket packet;
+			libffmpeg::av_init_packet(&packet);
+			packet.data = NULL;
+			packet.size = 0;
+			
+			ret = libffmpeg::avcodec_encode_video2(codecContext, &packet, data->VideoFrame, &gotFrame);
 
-			// if zero size, it means the image was buffered
-			if (out_size > 0)
+			if (gotFrame)
 			{
-				libffmpeg::AVPacket packet;
-				libffmpeg::av_init_packet(&packet);
-
-				if (codecContext->coded_frame->pts != AV_NOPTS_VALUE)
+				if (ret < 0)
 				{
-					packet.pts = libffmpeg::av_rescale_q(codecContext->coded_frame->pts, codecContext->time_base, data->VideoStream->time_base);
+					throw gcnew VideoException("Error encoding video. " + ret);
 				}
 
-				if (codecContext->coded_frame->key_frame)
-				{
-					packet.flags |= AV_PKT_FLAG_KEY;
-				}
+				packet.pts = libffmpeg::av_rescale_q(data->VideoFrame->pts, codecContext->time_base, data->VideoStream->time_base);
+				packet.dts = packet.pts;
 
 				packet.stream_index = data->VideoStream->index;
-				packet.data = data->VideoOutputBuffer;
-				packet.size = out_size;
+
+				Console::WriteLine("pts:" + packet.pts);
+				Console::WriteLine("dts:" + packet.dts);
 
 				// write the compressed frame to the media file
 				ret = libffmpeg::av_interleaved_write_frame(data->FormatContext, &packet);
 			}
-			else
-			{
-				// image was buffered
-			}
+
+			libffmpeg::av_free_packet(&packet);
 		}
 
 		if (ret != 0)
@@ -379,24 +368,19 @@ namespace WPFAnimationEncoding {
 	static libffmpeg::AVFrame* alloc_picture(enum libffmpeg::AVPixelFormat pix_fmt, int width, int height)
 	{
 		libffmpeg::AVFrame* picture;
-		void* picture_buf;
-		int size;
+		/*void* picture_buf;
+		int size;*/
 
 		picture = libffmpeg::avcodec_alloc_frame();
-		if (!picture)
-		{
-			return NULL;
-		}
+		picture->format = pix_fmt;
+		picture->width = width;
+		picture->height = height;
 
-		size = libffmpeg::avpicture_get_size(pix_fmt, width, height);
-		picture_buf = libffmpeg::av_malloc(size);
-		if (!picture_buf)
+		int result = libffmpeg::av_image_alloc(picture->data, picture->linesize, picture->width, picture->height, pix_fmt, 32);
+		if (result < 0)
 		{
-			libffmpeg::av_free(picture);
-			return NULL;
+			throw gcnew VideoException("Couldn't allocate frame for encoded video");
 		}
-
-		libffmpeg::avpicture_fill((libffmpeg::AVPicture *) picture, (libffmpeg::uint8_t *) picture_buf, pix_fmt, width, height);
 
 		return picture;
 	}
@@ -467,14 +451,6 @@ namespace WPFAnimationEncoding {
 		if (result < 0)
 		{
 			throw gcnew VideoException("Cannot open video codec.");
-		}
-
-		data->VideoOutputBuffer = NULL;
-		if (!(data->FormatContext->oformat->flags & AVFMT_RAWPICTURE))
-		{
-			// allocate output buffer 
-			data->VideoOutputBufferSize = 6 * codecContext->width * codecContext->height; // more than enough even for raw video
-			data->VideoOutputBuffer = (libffmpeg::uint8_t*) libffmpeg::av_malloc(data->VideoOutputBufferSize);
 		}
 
 		// allocate the encoded raw picture
