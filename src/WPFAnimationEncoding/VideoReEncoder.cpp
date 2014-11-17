@@ -246,18 +246,6 @@ namespace WPFAnimationEncoding
 		result = libffmpeg::av_image_alloc(session->output.videoFrame->data, session->output.videoFrame->linesize, session->output.videoFrame->width, session->output.videoFrame->height, session->output.codecContext->pix_fmt, 32);
 		if (result < 0)
 			throw gcnew VideoException("Couldn't allocate frame for encoded video");
-
-		//// create the video frame
-		//session->output.videoFrame = libffmpeg::avcodec_alloc_frame();
-		//if (!session->output.videoFrame)
-		//	throw gcnew VideoException("Couldn't create the input video frame.");
-
-		//int bufferSize = libffmpeg::avpicture_get_size(session->output.codecContext->pix_fmt, session->output.codecContext->width, session->output.codecContext->height);
-		//void * picture_buf = libffmpeg::av_malloc(bufferSize);
-		//if (!picture_buf)
-		//	throw gcnew VideoException("Couldn't allocate the output frame buffer.");
-
-		//libffmpeg::avpicture_fill((libffmpeg::AVPicture *) session->output.videoFrame, (libffmpeg::uint8_t *) picture_buf, session->output.codecContext->pix_fmt, session->output.codecContext->width, session->output.codecContext->height);
 	}
 
 	static Bitmap^ decode_frame(VideoReEncoderSession* session)
